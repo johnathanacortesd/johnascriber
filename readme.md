@@ -19,9 +19,7 @@ Este proyecto fue diseñado para ser una herramienta de transcripción rápida, 
     2.  **Texto con Marcas de Tiempo (.txt)**: Descarga la transcripción segmentada con marcas de tiempo `[HH:MM:SS --> HH:MM:SS]`, ideal para subtítulos o análisis.
 *   **📋 Funcionalidades Útiles**: Incluye un botón para copiar todo el texto al portapapeles con un solo clic.
 *   **🚀 Fácil de Desplegar**: Listo para ser desplegado en plataformas como Streamlit Community Cloud con una configuración mínima.
-
----
-(El resto del README.md sigue igual)
+*   
 ---
 
 ## ⚙️ Cómo Funciona
