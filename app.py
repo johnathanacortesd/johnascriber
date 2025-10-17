@@ -7,7 +7,7 @@ import re
 import streamlit.components.v1 as components
 from datetime import timedelta
 
-# --- LÓGICA DE AUTENTICACIÓN MEJORADA ---
+# --- LÓGICA DE AUTENTICACIÓN MEJORADA Y ROBUSTA ---
 
 # Inicializa el estado de la contraseña si no existe
 if "password_correct" not in st.session_state:
@@ -17,7 +17,8 @@ def validate_password():
     """Callback para verificar la contraseña introducida."""
     if st.session_state.get("password") == st.secrets.get("PASSWORD"):
         st.session_state.password_correct = True
-        del st.session_state.password  # No guardar la contraseña en el estado
+        if "password" in st.session_state:
+            del st.session_state.password
     else:
         st.session_state.password_correct = False
 
@@ -26,26 +27,24 @@ if not st.session_state.password_correct:
     st.title("Acceso Protegido")
     st.markdown("Por favor, introduce la contraseña para usar el transcriptor.")
     
-    password = st.text_input(
+    st.text_input(
         "Contraseña",
         type="password",
         on_change=validate_password,
         key="password"
     )
     
-    # Muestra error si se ha intentado y ha fallado
     if "password" in st.session_state and not st.session_state.password_correct:
         st.error("😕 Contraseña incorrecta. Inténtalo de nuevo.")
     
     st.stop() # Detiene la ejecución del resto del script
 
-# --- INICIO DE LA APP PRINCIPAL (Solo se ejecuta si la contraseña es correcta) ---
+# --- INICIO DE LA APP PRINCIPAL ---
 
 st.set_page_config(page_title="Transcriptor de Audio", page_icon="🎙️", layout="wide")
 
 # Capturar el tiempo de inicio desde la URL
-query_params = st.query_params
-start_time_from_url = int(query_params.get("start_time", [0])[0])
+start_time_from_url = int(st.query_params.get("start_time", [0])[0])
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -54,7 +53,7 @@ except KeyError:
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- FUNCIONES AUXILIARES (Definidas dentro del scope de la app principal) ---
+# --- FUNCIONES AUXILIARES ---
 def create_copy_button(text_to_copy):
     text_json = json.dumps(text_to_copy)
     button_id = f"copy-button-{hash(text_to_copy)}"
@@ -162,18 +161,25 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                     if i > last_index + 1: st.markdown("---")
                     
                     segment = segments[i]
-                    start_seconds = segment['start']
+                    start_seconds = int(segment['start'])
                     start_time_formatted = format_timestamp(start_seconds)
                     text = segment['text'].strip()
 
-                    if i in matching_indices:
-                        highlighted_text = pattern.sub(r'<mark>\g<0></mark>', text)
-                        st.markdown(
-                            f"<a href='?start_time={int(start_seconds)}' target='_self' style='text-decoration:none; color:inherit;'><b>[{start_time_formatted}]</b></a> → {highlighted_text}",
-                            unsafe_allow_html=True
-                        )
-                    else:
-                        st.markdown(f"<span style='color: #666;'>[{start_time_formatted}] → {text}</span>", unsafe_allow_html=True)
+                    # Lógica de visualización con columnas y botones
+                    col_ts, col_text = st.columns([1, 8])
+
+                    with col_ts:
+                        # Usar un botón para cambiar el tiempo, clave única para cada botón
+                        if st.button(f"▶️ {start_time_formatted}", key=f"play_{i}"):
+                            st.query_params["start_time"] = str(start_seconds)
+                            st.rerun()
+
+                    with col_text:
+                        if i in matching_indices:
+                            highlighted_text = pattern.sub(r'<mark>\g<0></mark>', text)
+                            st.markdown(highlighted_text, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<span style='color: #666;'>{text}</span>", unsafe_allow_html=True)
                     last_index = i
     
     st.text_area("Transcripción completa:", value=st.session_state.transcription, height=400)
