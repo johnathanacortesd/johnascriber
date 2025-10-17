@@ -29,22 +29,55 @@ def check_password():
 
 # --- FUNCIONES AUXILIARES ---
 
+# ***** INICIO DE LA SECCIÓN CORREGIDA *****
 def create_copy_button(text_to_copy):
+    """
+    Crea un botón de "Copiar Todo" que utiliza un método robusto y compatible
+    con todos los navegadores para copiar texto al portapapeles.
+    """
+    # Usamos json.dumps para escapar el texto de forma segura para JavaScript.
     text_json = json.dumps(text_to_copy)
+    
+    # Creamos un ID único para el botón para evitar conflictos.
+    button_id = f"copy-button-{hash(text_to_copy)}"
+
     button_html = f"""
-    <button id="copyBtn" onclick="copyToClipboard(this, {text_json})" style="width: 100%; padding: 0.25rem 0.5rem; border-radius: 0.5rem; border: 1px solid rgba(49, 51, 63, 0.2); background-color: #FFFFFF; color: #31333F;">
+    <button id="{button_id}" style="width: 100%; padding: 0.25rem 0.5rem; border-radius: 0.5rem; border: 1px solid rgba(49, 51, 63, 0.2); background-color: #FFFFFF; color: #31333F;">
         📋 Copiar Todo
     </button>
+
     <script>
-    function copyToClipboard(element, text) {{
-        navigator.clipboard.writeText(text).then(function() {{
-            element.innerText = "✅ ¡Copiado!";
-            setTimeout(function() {{ element.innerText = "📋 Copiar Todo"; }}, 2000);
-        }}, function(err) {{ console.error('Error al copiar: ', err); }});
-    }}
+    document.getElementById("{button_id}").onclick = function() {{
+        // Crear un elemento de área de texto temporal.
+        const textArea = document.createElement("textarea");
+        textArea.value = {text_json};
+
+        // Hacer el área de texto invisible y añadirla al DOM.
+        textArea.style.position = "fixed";
+        textArea.style.top = "-9999px";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+
+        // Seleccionar el texto y ejecutar el comando de copiado.
+        textArea.select();
+        document.execCommand("copy");
+
+        // Eliminar el área de texto temporal.
+        document.body.removeChild(textArea);
+
+        // Dar feedback visual al usuario.
+        const button = document.getElementById("{button_id}");
+        const originalText = button.innerText;
+        button.innerText = "✅ ¡Copiado!";
+        
+        setTimeout(function() {{
+            button.innerText = originalText;
+        }}, 2000);
+    }};
     </script>
     """
     components.html(button_html, height=40)
+# ***** FIN DE LA SECCIÓN CORREGIDA *****
 
 def format_timestamp(seconds):
     """Convierte segundos a un formato de tiempo HH:MM:SS."""
@@ -131,25 +164,21 @@ if check_password():
                 segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
                 
-                # Encontrar todos los índices de los segmentos que coinciden
                 matching_indices = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
 
                 if not matching_indices:
                     st.info("No se encontraron coincidencias.")
                 else:
-                    # Crear un conjunto de índices para mostrar (incluyendo contexto)
                     indices_to_display = set()
                     for idx in matching_indices:
                         indices_to_display.add(idx)
                         if idx > 0:
-                            indices_to_display.add(idx - 1) # Contexto anterior
+                            indices_to_display.add(idx - 1)
                         if idx < len(segments) - 1:
-                            indices_to_display.add(idx + 1) # Contexto posterior
+                            indices_to_display.add(idx + 1)
                     
-                    # Mostrar los segmentos de forma ordenada y agrupada
                     last_index = -2
                     for i in sorted(list(indices_to_display)):
-                        # Añadir un separador si los bloques de contexto no son contiguos
                         if i > last_index + 1:
                             st.markdown("---")
 
@@ -158,11 +187,9 @@ if check_password():
                         text = segment['text'].strip()
 
                         if i in matching_indices:
-                            # Es una coincidencia directa: resaltar y poner en negrita
                             highlighted_text = pattern.sub(r'<mark>\g<0></mark>', text)
                             st.markdown(f"**[{start_time}]** → {highlighted_text}", unsafe_allow_html=True)
                         else:
-                            # Es un segmento de contexto: mostrar atenuado
                             st.markdown(f"<span style='color: #666;'>[{start_time}] → {text}</span>", unsafe_allow_html=True)
                         
                         last_index = i
@@ -190,4 +217,4 @@ if check_password():
 
     # --- FOOTER ---
     st.markdown("---")
-    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y API de Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y API Key de Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
