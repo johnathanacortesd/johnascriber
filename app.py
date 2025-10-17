@@ -3,7 +3,7 @@ from groq import Groq
 import tempfile
 import os
 import json
-import re  # Importado para expresiones regulares
+import re
 import streamlit.components.v1 as components
 from datetime import timedelta
 
@@ -12,21 +12,20 @@ from datetime import timedelta
 def check_password():
     """Devuelve True si la contraseña es correcta, de lo contrario False."""
     def password_entered():
-        if st.session_state["password"] == st.secrets["PASSWORD"]:
+        if st.session_state.get("password") == st.secrets.get("PASSWORD"):
             st.session_state["password_correct"] = True
-            del st.session_state["password"]
+            if "password" in st.session_state:
+                del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
-    if "password_correct" not in st.session_state:
-        st.text_input("Contraseña", type="password", on_change=password_entered, key="password")
-        return False
-    elif not st.session_state["password_correct"]:
-        st.text_input("Contraseña", type="password", on_change=password_entered, key="password")
-        st.error("😕 Contraseña incorrecta. Inténtalo de nuevo.")
-        return False
-    else:
+    if st.session_state.get("password_correct", False):
         return True
+
+    st.text_input("Contraseña", type="password", on_change=password_entered, key="password")
+    if "password_correct" in st.session_state and not st.session_state["password_correct"]:
+        st.error("😕 Contraseña incorrecta. Inténtalo de nuevo.")
+    return False
 
 # --- FUNCIONES AUXILIARES ---
 
@@ -57,19 +56,15 @@ def format_timestamp(seconds):
 def format_transcription_with_timestamps(data):
     if not hasattr(data, 'segments') or not data.segments:
         return "No se encontraron segmentos con marcas de tiempo."
-    lines = []
-    for segment in data.segments:
-        start_time = format_timestamp(segment['start'])
-        end_time = format_timestamp(segment['end'])
-        text = segment['text']
-        lines.append(f"[{start_time} --> {end_time}] {text.strip()}")
+    lines = [
+        f"[{format_timestamp(seg['start'])} --> {format_timestamp(seg['end'])}] {seg['text'].strip()}"
+        for seg in data.segments
+    ]
     return "\n".join(lines)
 
 # --- INICIO DE LA APP ---
 
 if check_password():
-
-    # Configuración de la página
     st.set_page_config(page_title="Transcriptor de Audio", page_icon="🎙️", layout="wide")
 
     try:
@@ -80,8 +75,8 @@ if check_password():
         st.stop()
 
     st.title("🎙️ Transcriptor de Audio con Groq")
-    st.markdown("Sube tu archivo de audio o video y obtén la transcripción en segundos")
-
+    
+    # --- SIDEBAR ---
     with st.sidebar:
         st.header("⚙️ Configuración")
         st.subheader("Opciones de Transcripción")
@@ -92,99 +87,82 @@ if check_password():
         st.markdown("---")
         st.success("✅ API Key configurada correctamente")
 
-    col1, col2 = st.columns([1, 1])
+    # --- SECCIÓN DE CARGA Y TRANSCRIPCIÓN (MÁS COMPACTA) ---
+    st.subheader("1. Sube tu archivo y presiona Transcribir")
+    col1, col2 = st.columns([3, 1])
     with col1:
-        st.subheader("📁 Subir Archivo")
-        uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], help="Tamaño máximo: 25 MB")
-        if uploaded_file:
-            st.success(f"✅ Archivo cargado: {uploaded_file.name}")
-            st.write(f"**Tamaño:** {uploaded_file.size / 1024 / 1024:.2f} MB")
-
+        uploaded_file = st.file_uploader(
+            "Selecciona un archivo de audio o video",
+            type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"],
+            label_visibility="collapsed"
+        )
     with col2:
-        st.subheader("🚀 Transcribir")
-        if st.button("Iniciar Transcripción", type="primary", use_container_width=True):
-            if not uploaded_file:
-                st.error("❌ Por favor sube un archivo de audio")
-            else:
+        if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
+            with st.spinner("🔄 Transcribiendo..."):
                 try:
-                    with st.spinner("🔄 Transcribiendo..."):
-                        client = Groq(api_key=api_key)
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
-                            tmp.write(uploaded_file.getvalue())
-                            tmp_file_path = tmp.name
-                        with open(tmp_file_path, "rb") as audio_file:
-                            transcription = client.audio.transcriptions.create(file=(uploaded_file.name, audio_file.read()), model="whisper-large-v3", temperature=temperature, language=language, response_format="verbose_json")
-                        os.unlink(tmp_file_path)
-                        st.session_state.transcription = transcription.text
-                        st.session_state.transcription_data = transcription
-                        st.success("✅ ¡Transcripción completada!")
+                    client = Groq(api_key=api_key)
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
+                        tmp.write(uploaded_file.getvalue())
+                        tmp_file_path = tmp.name
+                    with open(tmp_file_path, "rb") as audio_file:
+                        transcription = client.audio.transcriptions.create(
+                            file=(uploaded_file.name, audio_file.read()),
+                            model="whisper-large-v3",
+                            temperature=temperature,
+                            language=language,
+                            response_format="verbose_json"
+                        )
+                    os.unlink(tmp_file_path)
+                    st.session_state.transcription = transcription.text
+                    st.session_state.transcription_data = transcription
+                    st.success("✅ ¡Transcripción completada!")
                 except Exception as e:
                     st.error(f"❌ Error durante la transcripción: {str(e)}")
-                    if "authentication" in str(e).lower():
-                        st.warning("Verifica que tu API Key en Secrets sea correcta")
 
-    if hasattr(st.session_state, 'transcription'):
+    # --- SECCIÓN DE RESULTADOS (SI EXISTE TRANSCRIPCIÓN) ---
+    if 'transcription' in st.session_state:
         st.markdown("---")
-        st.subheader("📝 Resultado de la Transcripción")
+        st.subheader("2. Revisa, Busca y Descarga")
+
+        # --- BÚSQUEDA ARRIBA DEL TEXTO ---
+        search_query = st.text_input("🔎 Buscar en la transcripción:", placeholder="Escribe una o más palabras...")
         
-        transcription_text = st.text_area("Transcripción:", value=st.session_state.transcription, height=300)
+        if search_query:
+            with st.expander("Resultados de la búsqueda", expanded=True):
+                pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+                results_found = False
+                for segment in st.session_state.transcription_data.segments:
+                    if pattern.search(segment['text']):
+                        results_found = True
+                        start_time = format_timestamp(segment['start'])
+                        highlighted_text = pattern.sub(r'<mark>\g<0></mark>', segment['text'])
+                        st.markdown(f"**[{start_time}]** → {highlighted_text}", unsafe_allow_html=True)
+                if not results_found:
+                    st.info("No se encontraron coincidencias.")
         
-        col1, col2, col3, col4 = st.columns([1.5, 1.8, 1.2, 1])
-        with col1:
+        # --- ÁREA DE TEXTO AMPLIADA ---
+        st.text_area(
+            "Transcripción completa:",
+            value=st.session_state.transcription,
+            height=400 # Más altura para el texto
+        )
+        
+        # --- BOTONES DE ACCIÓN ---
+        st.write("") # Espacio
+        b_col1, b_col2, b_col3, b_col4 = st.columns([1.5, 2, 1.2, 1])
+        with b_col1:
             st.download_button("💾 Descargar TXT", st.session_state.transcription, "transcripcion.txt", "text/plain", use_container_width=True)
-        with col2:
+        with b_col2:
             timestamped_text = format_transcription_with_timestamps(st.session_state.transcription_data)
             st.download_button("💾 Descargar TXT (con tiempos)", timestamped_text, "transcripcion_con_tiempos.txt", "text/plain", use_container_width=True)
-        with col3:
-             create_copy_button(transcription_text)
-        with col4:
+        with b_col3:
+            create_copy_button(st.session_state.transcription)
+        with b_col4:
             if st.button("🗑️ Limpiar", use_container_width=True):
                 del st.session_state.transcription
                 del st.session_state.transcription_data
                 st.rerun()
 
-        # --- NUEVA SECCIÓN DE BÚSQUEDA ---
-        st.markdown("---")
-        st.subheader("🔎 Búsqueda de Palabras Clave")
-        search_query = st.text_input("Buscar en la transcripción:", placeholder="Escribe una o más palabras...")
-
-        if search_query:
-            # Usamos re.escape para tratar los caracteres especiales de la búsqueda como texto literal
-            # El flag re.IGNORECASE hace la búsqueda insensible a mayúsculas/minúsculas
-            pattern = re.compile(re.escape(search_query), re.IGNORECASE)
-            
-            results_found = False
-            
-            st.markdown("---")
-            st.write(f"**Resultados para \"{search_query}\":**")
-
-            # Iteramos sobre los segmentos para encontrar coincidencias
-            for segment in st.session_state.transcription_data.segments:
-                if pattern.search(segment['text']):
-                    results_found = True
-                    start_time = format_timestamp(segment['start'])
-                    
-                    # Reemplazamos la palabra encontrada con la misma palabra envuelta en <mark> para resaltarla
-                    highlighted_text = pattern.sub(r'<mark>\g<0></mark>', segment['text'])
-                    
-                    st.markdown(f"**[{start_time}]** → {highlighted_text}", unsafe_allow_html=True)
-            
-            if not results_found:
-                st.info("No se encontraron resultados para tu búsqueda.")
-        # --- FIN DE LA SECCIÓN DE BÚSQUEDA ---
-        
-        st.markdown("---")
-        st.subheader("📊 Estadísticas")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Palabras", len(st.session_state.transcription.split()))
-        with col2:
-            st.metric("Caracteres", len(st.session_state.transcription))
-        with col3:
-            if hasattr(st.session_state.transcription_data, 'duration'):
-                st.metric("Duración", f"{st.session_state.transcription_data.duration:.1f}s")
-            else:
-                st.metric("Idioma", language.upper())
-
+    # --- FOOTER ---
     st.markdown("---")
-    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés usando 🤖 Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Obtén tu API Key en Groq</a></p></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y usando una API Key de Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
