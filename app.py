@@ -203,4 +203,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado con ❤️ usando Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Obtén tu API Key en Groq</a></p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
