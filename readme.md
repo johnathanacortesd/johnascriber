@@ -2,9 +2,11 @@
 
 [![Abrir en Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://johnascriber.streamlit.app/)
 
-Una aplicación web simple y potente para transcribir archivos de audio y video en segundos. Construida con [Streamlit](https://streamlit.io/) y potenciada por la increíble velocidad de la API de [Groq](https://groq.com/) que utiliza el modelo `whisper-large-v3` de OpenAI.
+**<-- ARRASTRA Y SUELTA TU GIF AQUÍ MISMO** 
+*(Después de arrastrarlo, GitHub creará una línea como `![demo](...)`. Puedes dejarla tal cual.)*
 
 ---
+![johanscriber](https://github.com/user-attachments/assets/6adf0edd-a5fe-4089-9beb-e11723e1f03d)
 
 ## ✨ Ventajas y Características Principales
 
@@ -21,6 +23,8 @@ Este proyecto fue diseñado para ser una herramienta de transcripción rápida, 
 *   **📋 Funcionalidades Útiles**: Incluye un botón para copiar todo el texto al portapapeles con un solo clic.
 *   **🚀 Fácil de Desplegar**: Listo para ser desplegado en plataformas como Streamlit Community Cloud con una configuración mínima.
 
+---
+(El resto del README.md sigue igual)
 ---
 
 ## ⚙️ Cómo Funciona
