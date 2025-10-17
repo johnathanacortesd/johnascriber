@@ -2,11 +2,8 @@
 
 [![Abrir en Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://johnascriber.streamlit.app/)
 
-**<-- ARRASTRA Y SUELTA TU GIF AQUÍ MISMO** 
-*(Después de arrastrarlo, GitHub creará una línea como `![demo](...)`. Puedes dejarla tal cual.)*
+![johanscriber](https://github.com/user-attachments/assets/e368cdc8-4fac-4081-9373-76174ae48840)
 
----
-![johanscriber](https://github.com/user-attachments/assets/6adf0edd-a5fe-4089-9beb-e11723e1f03d)
 
 ## ✨ Ventajas y Características Principales
 
