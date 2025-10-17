@@ -74,7 +74,7 @@ def format_transcription_with_timestamps(data):
 if check_password():
     st.set_page_config(page_title="Transcriptor de Audio", page_icon="🎙️", layout="wide")
 
-    # --- NUEVO: Capturar el tiempo de inicio desde la URL ---
+    # --- Capturar el tiempo de inicio desde la URL ---
     query_params = st.query_params
     start_time_from_url = int(query_params.get("start_time", [0])[0])
 
@@ -99,14 +99,15 @@ if check_password():
     col1, col2 = st.columns([3, 1])
     with col1:
         uploaded_file = st.file_uploader(
-            "Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"],
+            "Selecciona un archivo de audio o video",
+            type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"],
             label_visibility="collapsed"
         )
     with col2:
         if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
             with st.spinner("🔄 Transcribiendo..."):
                 try:
-                    # Guardar el audio para el reproductor antes de procesarlo
+                    # Guardar el audio para el reproductor
                     st.session_state.uploaded_audio_bytes = uploaded_file.getvalue()
                     
                     client = Groq(api_key=api_key)
@@ -127,11 +128,12 @@ if check_password():
                     st.error(f"❌ Error durante la transcripción: {str(e)}")
 
     # --- SECCIÓN DE RESULTADOS MEJORADA ---
-    if 'transcription' in st.session_state:
+    if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
         st.markdown("---")
         st.subheader("2. Reproduce, Revisa y Descarga")
 
-        # --- NUEVO: Reproductor de Audio ---
+        # --- Reproductor de Audio ---
+        # Solo muestra el reproductor si hay audio para reproducir
         st.audio(st.session_state.uploaded_audio_bytes, start_time=start_time_from_url)
 
         search_query = st.text_input("🔎 Buscar en la transcripción:", placeholder="Escribe para encontrar y escuchar un momento exacto...")
@@ -140,6 +142,7 @@ if check_password():
             with st.expander("Resultados de la búsqueda contextual", expanded=True):
                 segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+                
                 matching_indices = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
 
                 if not matching_indices:
@@ -160,13 +163,14 @@ if check_password():
 
                         if i in matching_indices:
                             highlighted_text = pattern.sub(r'<mark>\g<0></mark>', text)
-                            # --- NUEVO: Enlace para controlar el reproductor ---
+                            # Enlace que actualiza la URL con el tiempo de inicio
                             st.markdown(
                                 f"<a href='?start_time={int(start_seconds)}' target='_self' style='text-decoration:none; color:inherit;'><b>[{start_time_formatted}]</b></a> → {highlighted_text}",
                                 unsafe_allow_html=True
                             )
                         else:
                             st.markdown(f"<span style='color: #666;'>[{start_time_formatted}] → {text}</span>", unsafe_allow_html=True)
+                        
                         last_index = i
         
         st.text_area("Transcripción completa:", value=st.session_state.transcription, height=400)
@@ -180,15 +184,16 @@ if check_password():
             st.download_button("💾 TXT (con tiempos)", timestamped_text, "transcripcion_con_tiempos.txt", "text/plain", use_container_width=True)
         with b_col3:
             create_copy_button(st.session_state.transcription)
-        with b_col4:
+        with col4:
             if st.button("🗑️ Limpiar", use_container_width=True):
-                # Limpiar todo, incluyendo el audio y los query params
                 keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes"]
                 for key in keys_to_delete:
                     if key in st.session_state:
                         del st.session_state[key]
-                st.query_params.clear()
+                # Limpiar el parámetro de tiempo de la URL para evitar que se repita al recargar
+                if "start_time" in st.query_params:
+                    del st.query_params["start_time"]
                 st.rerun()
 
     st.markdown("---")
-    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado con ❤️ usando Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Obtén tu API Key en Groq</a></p></div>""", unsafe_allow_html=True)
