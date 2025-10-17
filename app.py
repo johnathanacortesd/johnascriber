@@ -49,9 +49,8 @@ def create_copy_button(text_to_copy):
 def format_timestamp(seconds):
     delta = timedelta(seconds=seconds)
     hours, remainder = divmod(delta.seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    milliseconds = delta.microseconds // 1000
-    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
+    minutes, seconds_val = divmod(remainder, 60) # Renombrada para evitar conflicto
+    return f"{hours:02}:{minutes:02}:{seconds_val:02}"
 
 def format_transcription_with_timestamps(data):
     if not hasattr(data, 'segments') or not data.segments:
