@@ -2,7 +2,7 @@
 
 Una aplicación web simple y potente para transcribir archivos de audio y video en segundos. Construida con [Streamlit](https://streamlit.io/) y potenciada por la increíble velocidad de la API de [Groq](https://groq.com/) que utiliza el modelo `whisper-large-v3` de OpenAI.
 
-[![Abrir en Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)]([https://johnapp-ghvnsz7rafze4s5ib59qsk.streamlit.app](https://johnascriber.streamlit.app/)/)
+[![Abrir en Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)]([https://johnapp-ghvnsz7rafze4s5ib59qsk.streamlit.app](https://johnascriber.streamlit.app/)
 
 
 ![Demo de la App](https://i.imgur.com/your-demo-image.gif)
