@@ -47,9 +47,10 @@ def create_copy_button(text_to_copy):
     components.html(button_html, height=40)
 
 def format_timestamp(seconds):
+    """Convierte segundos a un formato de tiempo HH:MM:SS."""
     delta = timedelta(seconds=seconds)
     hours, remainder = divmod(delta.seconds, 3600)
-    minutes, seconds_val = divmod(remainder, 60) # Renombrada para evitar conflicto
+    minutes, seconds_val = divmod(remainder, 60)
     return f"{hours:02}:{minutes:02}:{seconds_val:02}"
 
 def format_transcription_with_timestamps(data):
@@ -86,7 +87,7 @@ if check_password():
         st.markdown("---")
         st.success("✅ API Key configurada correctamente")
 
-    # --- SECCIÓN DE CARGA Y TRANSCRIPCIÓN (MÁS COMPACTA) ---
+    # --- SECCIÓN DE CARGA Y TRANSCRIPCIÓN ---
     st.subheader("1. Sube tu archivo y presiona Transcribir")
     col1, col2 = st.columns([3, 1])
     with col1:
@@ -118,35 +119,60 @@ if check_password():
                 except Exception as e:
                     st.error(f"❌ Error durante la transcripción: {str(e)}")
 
-    # --- SECCIÓN DE RESULTADOS (SI EXISTE TRANSCRIPCIÓN) ---
+    # --- SECCIÓN DE RESULTADOS ---
     if 'transcription' in st.session_state:
         st.markdown("---")
         st.subheader("2. Revisa, Busca y Descarga")
 
-        # --- BÚSQUEDA ARRIBA DEL TEXTO ---
         search_query = st.text_input("🔎 Buscar en la transcripción:", placeholder="Escribe una o más palabras...")
         
         if search_query:
-            with st.expander("Resultados de la búsqueda", expanded=True):
+            with st.expander("Resultados de la búsqueda contextual", expanded=True):
+                segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
-                results_found = False
-                for segment in st.session_state.transcription_data.segments:
-                    if pattern.search(segment['text']):
-                        results_found = True
-                        start_time = format_timestamp(segment['start'])
-                        highlighted_text = pattern.sub(r'<mark>\g<0></mark>', segment['text'])
-                        st.markdown(f"**[{start_time}]** → {highlighted_text}", unsafe_allow_html=True)
-                if not results_found:
+                
+                # Encontrar todos los índices de los segmentos que coinciden
+                matching_indices = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
+
+                if not matching_indices:
                     st.info("No se encontraron coincidencias.")
-        
-        # --- ÁREA DE TEXTO AMPLIADA ---
+                else:
+                    # Crear un conjunto de índices para mostrar (incluyendo contexto)
+                    indices_to_display = set()
+                    for idx in matching_indices:
+                        indices_to_display.add(idx)
+                        if idx > 0:
+                            indices_to_display.add(idx - 1) # Contexto anterior
+                        if idx < len(segments) - 1:
+                            indices_to_display.add(idx + 1) # Contexto posterior
+                    
+                    # Mostrar los segmentos de forma ordenada y agrupada
+                    last_index = -2
+                    for i in sorted(list(indices_to_display)):
+                        # Añadir un separador si los bloques de contexto no son contiguos
+                        if i > last_index + 1:
+                            st.markdown("---")
+
+                        segment = segments[i]
+                        start_time = format_timestamp(segment['start'])
+                        text = segment['text'].strip()
+
+                        if i in matching_indices:
+                            # Es una coincidencia directa: resaltar y poner en negrita
+                            highlighted_text = pattern.sub(r'<mark>\g<0></mark>', text)
+                            st.markdown(f"**[{start_time}]** → {highlighted_text}", unsafe_allow_html=True)
+                        else:
+                            # Es un segmento de contexto: mostrar atenuado
+                            st.markdown(f"<span style='color: #666;'>[{start_time}] → {text}</span>", unsafe_allow_html=True)
+                        
+                        last_index = i
+
         st.text_area(
             "Transcripción completa:",
             value=st.session_state.transcription,
-            height=400 # Más altura para el texto
+            height=400
         )
         
-        # --- BOTONES DE ACCIÓN ---
         st.write("") # Espacio
         b_col1, b_col2, b_col3, b_col4 = st.columns([1.5, 2, 1.2, 1])
         with b_col1:
@@ -164,4 +190,4 @@ if check_password():
 
     # --- FOOTER ---
     st.markdown("---")
-    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y usando una API Key de Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
+    st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y API de Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
