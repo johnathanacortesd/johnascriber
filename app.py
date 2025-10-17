@@ -198,7 +198,7 @@ if check_password():
     st.markdown(
         """
         <div style='text-align: center; color: #666;'>
-            <p>Desarrollado con ❤️ usando Streamlit y Groq</p>
+            <p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y Groq</p>
             <p>🔗 <a href='https://console.groq.com' target='_blank'>Obtén tu API Key en Groq</a></p>
         </div>
         """,
