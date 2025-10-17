@@ -1,12 +1,8 @@
 # 🎙️ Transcriptor de Audio con Groq y Streamlit
 
-Una aplicación web simple y potente para transcribir archivos de audio y video en segundos. Construida con [Streamlit](https://streamlit.io/) y potenciada por la increíble velocidad de la API de [Groq](https://groq.com/) que utiliza el modelo `whisper-large-v3` de OpenAI.
-
 [![Abrir en Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://johnascriber.streamlit.app/)
 
-
-![Demo de la App](https://i.imgur.com/your-demo-image.gif)
-*(Recomendación: Graba un GIF corto mostrando la app en acción y reemplaza la URL de arriba)*
+Una aplicación web simple y potente para transcribir archivos de audio y video en segundos. Construida con [Streamlit](https://streamlit.io/) y potenciada por la increíble velocidad de la API de [Groq](https://groq.com/) que utiliza el modelo `whisper-large-v3` de OpenAI.
 
 ---
 
@@ -16,7 +12,7 @@ Este proyecto fue diseñado para ser una herramienta de transcripción rápida, 
 
 *   **⚡ Velocidad Extrema**: Gracias a la infraestructura de Groq, las transcripciones de audios de varios minutos se completan en cuestión de segundos, no minutos.
 *   **🎯 Alta Precisión**: Utiliza el modelo `whisper-large-v3` de OpenAI, uno de los modelos de reconocimiento de voz más avanzados disponibles.
-*   **🔒 Privacidad Asegurada**: Protegida por una contraseña única que se gestiona a través de los secretos de Streamlit, asegurando que solo usuarios autorizados puedan acceder.
+*   **🔒 Acceso Seguro con Contraseña**: Para mayor seguridad, **el acceso a la aplicación está protegido por una contraseña única**. Esto asegura que solo los usuarios autorizados puedan utilizar la herramienta de transcripción.
 *   **🌐 Soporte Multilingüe**: Permite seleccionar el idioma del audio de una lista predefinida para mejorar la precisión de la transcripción.
 *   **🔎 Búsqueda Inteligente**: Incluye una función de búsqueda que resalta todas las coincidencias de una palabra clave directamente en la transcripción, mostrando el momento exacto (`[HH:MM:SS]`) en que fue dicha.
 *   **📥 Múltiples Opciones de Descarga**:
@@ -56,3 +52,26 @@ El nivel gratuito es muy generoso, pero tiene límites que debes conocer:
 *   **Sin Persistencia de Datos**: La aplicación es "sin estado" (stateless). Las transcripciones no se guardan en ningún servidor o base de datos. Si cierras o refrescas la página, los resultados se perderán.
 
 ---
+
+## 🚀 Instalación y Despliegue
+
+### Despliegue en Streamlit Community Cloud (Recomendado)
+
+1.  **Haz un Fork** de este repositorio en tu cuenta de GitHub.
+2.  **Ve a [Streamlit Community Cloud](https://share.streamlit.io/)** y haz clic en "New app".
+3.  **Conecta tu repositorio** y selecciona el archivo principal de la aplicación (ej: `app.py`).
+4.  **Configura los Secretos**: En la configuración avanzada (`Advanced settings...`), añade tus secretos:
+    ```toml
+    GROQ_API_KEY = "gsk_TU_API_KEY_DE_GROQ"
+    PASSWORD = "la_contraseña_secreta_que_quieras"
+    ```
+5.  **Despliega**: Haz clic en "Deploy!" y espera a que tu aplicación esté en línea.
+
+### Ejecución Local
+
+Para ejecutar esta aplicación en tu propia máquina, sigue estos pasos:
+
+**1. Clona el Repository**
+```bash
+git clone https://github.com/tu-usuario/tu-repositorio.git
+cd tu-repositorio
