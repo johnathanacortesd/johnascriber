@@ -93,11 +93,11 @@ def generate_summary(transcription_text, client):
             messages=[
                 {
                     "role": "system",
-                    "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes concisos y profesionales."
+                    "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes en formato de párrafo corrido, profesionales y concisos."
                 },
                 {
                     "role": "user",
-                    "content": f"Resume este contenido en 3-5 puntos clave para un analista de noticias:\n\n{transcription_text}"
+                    "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) sobre el siguiente contenido. No uses bullet points, no uses listas numeradas, no uses introducciones como 'A continuación' o 'El resumen es'. Ve directo al contenido:\n\n{transcription_text}"
                 }
             ],
             model="llama-3.3-70b-versatile",
@@ -413,7 +413,16 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                     use_container_width=True
                 )
             else:
-                st.info("👥 La detección de hablantes no está activada. Activa la opción en el sidebar.")
+                st.warning("👥 **La detección de hablantes está desactivada**")
+                st.markdown("""
+                Para activar esta función:
+                1. Ve al **sidebar** (menú lateral izquierdo) ⬅️
+                2. Busca la sección **"🎯 Análisis Inteligente"**
+                3. Marca la casilla **"👥 Detectar hablantes"**
+                4. Sube un nuevo audio y transcribe
+                
+                Esta función identifica automáticamente cambios de hablante basándose en pausas en el audio.
+                """)
     
     # Botón de limpiar (fuera de las pestañas)
     st.markdown("---")
@@ -427,7 +436,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado con ❤️ para análisis periodístico</p>
 <p>🔗 <a href='https://console.groq.com' target='_blank'>Groq Console</a> | 
 📚 <a href='https://console.groq.com/docs/models' target='_blank'>Modelos Disponibles</a></p>
 </div>""", unsafe_allow_html=True)
