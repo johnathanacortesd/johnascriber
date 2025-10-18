@@ -9,12 +9,10 @@ from datetime import timedelta
 
 # --- LÓGICA DE AUTENTICACIÓN ROBUSTA ---
 
-# Inicializa el estado de la contraseña si no existe
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
 def validate_password():
-    """Callback para verificar la contraseña introducida."""
     if st.session_state.get("password") == st.secrets.get("PASSWORD"):
         st.session_state.password_correct = True
         if "password" in st.session_state:
@@ -22,29 +20,21 @@ def validate_password():
     else:
         st.session_state.password_correct = False
 
-# Si la contraseña no es correcta, muestra el formulario y detiene la app
 if not st.session_state.password_correct:
     st.title("Acceso Protegido")
     st.markdown("Por favor, introduce la contraseña para usar el transcriptor.")
-    
-    st.text_input(
-        "Contraseña",
-        type="password",
-        on_change=validate_password,
-        key="password"
-    )
-    
+    st.text_input("Contraseña", type="password", on_change=validate_password, key="password")
     if "password" in st.session_state and not st.session_state.password_correct:
         st.error("😕 Contraseña incorrecta. Inténtalo de nuevo.")
-    
-    st.stop() # Detiene la ejecución del resto del script
+    st.stop()
 
 # --- INICIO DE LA APP PRINCIPAL ---
 
 st.set_page_config(page_title="Transcriptor de Audio", page_icon="🎙️", layout="wide")
 
-# Capturar el tiempo de inicio desde la URL
-start_time_from_url = int(st.query_params.get("start_time", [0])[0])
+# ***** CAMBIO CLAVE: Usar st.session_state para el tiempo de inicio *****
+if 'audio_start_time' not in st.session_state:
+    st.session_state.audio_start_time = 0
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -114,6 +104,8 @@ with col1:
     )
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
+        # ***** CAMBIO CLAVE: Resetear el tiempo de inicio para el nuevo audio *****
+        st.session_state.audio_start_time = 0
         with st.spinner("🔄 Transcribiendo..."):
             try:
                 st.session_state.uploaded_audio_bytes = uploaded_file.getvalue()
@@ -139,7 +131,8 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     st.subheader("2. Reproduce, Revisa y Descarga")
 
-    st.audio(st.session_state.uploaded_audio_bytes, start_time=start_time_from_url)
+    # ***** CAMBIO CLAVE: Leer el tiempo de inicio desde st.session_state *****
+    st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
 
     search_query = st.text_input("🔎 Buscar en la transcripción:", placeholder="Escribe para encontrar y escuchar un momento exacto...")
     
@@ -168,13 +161,10 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                     col_ts, col_text = st.columns([0.2, 0.8], gap="small")
 
                     with col_ts:
-                        # ***** INICIO DE LA SECCIÓN CORREGIDA *****
-                        # Este es el método correcto y robusto
+                        # ***** CAMBIO CLAVE: El botón ahora actualiza st.session_state y hace rerun *****
                         if st.button(f"▶️ {start_time_formatted}", key=f"play_{i}", use_container_width=True):
-                            # Al asignar un valor a st.query_params, Streamlit automáticamente
-                            # vuelve a ejecutar el script. No es necesario st.rerun().
-                            st.query_params.start_time = str(start_seconds)
-                        # ***** FIN DE LA SECCIÓN CORREGIDA *****
+                            st.session_state.audio_start_time = start_seconds
+                            st.rerun()
 
                     with col_text:
                         if i in matching_indices:
@@ -197,11 +187,10 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         create_copy_button(st.session_state.transcription)
     with b_col4:
         if st.button("🗑️ Limpiar", use_container_width=True):
-            keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes"]
+            keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time"]
             for key in keys_to_delete:
                 if key in st.session_state:
                     del st.session_state[key]
-            st.query_params.clear()
             st.rerun()
 
 st.markdown("---")
