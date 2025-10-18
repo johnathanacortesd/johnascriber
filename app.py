@@ -7,7 +7,7 @@ import re
 import streamlit.components.v1 as components
 from datetime import timedelta
 
-# --- LÓGICA DE AUTENTICACIÓN MEJORADA Y ROBUSTA ---
+# --- LÓGICA DE AUTENTICACIÓN ROBUSTA ---
 
 # Inicializa el estado de la contraseña si no existe
 if "password_correct" not in st.session_state:
@@ -165,14 +165,16 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                     start_time_formatted = format_timestamp(start_seconds)
                     text = segment['text'].strip()
 
-                    # Lógica de visualización con columnas y botones
-                    col_ts, col_text = st.columns([1, 8])
+                    col_ts, col_text = st.columns([0.2, 0.8], gap="small")
 
                     with col_ts:
-                        # Usar un botón para cambiar el tiempo, clave única para cada botón
-                        if st.button(f"▶️ {start_time_formatted}", key=f"play_{i}"):
-                            st.query_params["start_time"] = str(start_seconds)
-                            st.rerun()
+                        # ***** INICIO DE LA SECCIÓN CORREGIDA *****
+                        # Este es el método correcto y robusto
+                        if st.button(f"▶️ {start_time_formatted}", key=f"play_{i}", use_container_width=True):
+                            # Al asignar un valor a st.query_params, Streamlit automáticamente
+                            # vuelve a ejecutar el script. No es necesario st.rerun().
+                            st.query_params.start_time = str(start_seconds)
+                        # ***** FIN DE LA SECCIÓN CORREGIDA *****
 
                     with col_text:
                         if i in matching_indices:
@@ -203,4 +205,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado por Johnathan Cortés 🤖 usando Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Groq</a></p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p>Desarrollado con ❤️ usando Streamlit y Groq</p><p>🔗 <a href='https://console.groq.com' target='_blank'>Obtén tu API Key en Groq</a></p></div>""", unsafe_allow_html=True)
