@@ -124,17 +124,45 @@ def extract_key_topics(transcription_text):
     return word_freq.most_common(10)
 
 def extract_quotes(segments):
-    """Identifica posibles citas textuales importantes"""
+    """Identifica citas textuales y declaraciones importantes con contexto mejorado"""
     quotes = []
-    for seg in segments:
+    quote_keywords = ['dijo', 'afirmó', 'declaró', 'señaló', 'expresó', 'manifestó', 
+                      'indicó', 'comentó', 'aseguró', 'confirmó', 'negó', 'advirtió',
+                      'explicó', 'destacó', 'subrayó', 'recalcó', 'sostuvo']
+    
+    for i, seg in enumerate(segments):
         text = seg['text'].strip()
-        if '"' in text or 'dijo' in text.lower() or 'afirmó' in text.lower() or 'declaró' in text.lower():
+        text_lower = text.lower()
+        
+        # Buscar comillas directas
+        has_quotes = '"' in text or '«' in text or '»' in text
+        
+        # Buscar palabras clave de declaración
+        has_declaration = any(keyword in text_lower for keyword in quote_keywords)
+        
+        if has_quotes or has_declaration:
+            # Intentar obtener contexto adicional
+            context_before = ""
+            context_after = ""
+            
+            if i > 0:
+                context_before = segments[i-1]['text'].strip()
+            if i < len(segments) - 1:
+                context_after = segments[i+1]['text'].strip()
+            
+            full_context = f"{context_before} {text} {context_after}".strip()
+            
             quotes.append({
                 'time': format_timestamp(seg['start']),
                 'text': text,
-                'start': seg['start']
+                'full_context': full_context,
+                'start': seg['start'],
+                'type': 'quote' if has_quotes else 'declaration'
             })
-    return quotes[:8]
+    
+    # Limitar a las 10 más relevantes (priorizar las que tienen comillas)
+    quotes.sort(key=lambda x: (x['type'] == 'quote', len(x['text'])), reverse=True)
+    return quotes[:10]
 
 def export_to_srt(data):
     """Exporta a formato SRT (subtítulos)"""
@@ -193,7 +221,8 @@ with st.sidebar:
             "whisper-large-v3-turbo",
             "distil-whisper-large-v3-en"
         ],
-        help="Large-v3: Máxima precisión | Turbo: Más rápido | Distil: Inglés optimizado"
+        index=0,
+        help="Large-v3: Máxima precisión (recomendado) | Turbo: Más rápido | Distil: Inglés optimizado"
     )
     
     language = st.selectbox("Idioma", options=["es", "en", "fr", "de", "it", "pt", "ja", "ko", "zh"], index=0)
@@ -204,8 +233,7 @@ with st.sidebar:
     
     enable_summary = st.checkbox("📝 Generar resumen automático", value=True)
     enable_topics = st.checkbox("🏷️ Extraer temas clave", value=True)
-    enable_quotes = st.checkbox("💬 Identificar citas", value=True)
-    enable_speakers = st.checkbox("👥 Detectar hablantes", value=False, help="Identifica cambios de speaker")
+    enable_quotes = st.checkbox("💬 Identificar citas y declaraciones", value=True)
     
     st.markdown("---")
     st.info("💡 **Formatos soportados:** MP3, MP4, WAV, WEBM, M4A, MPEG, MPGA")
@@ -252,8 +280,6 @@ with col2:
                         st.session_state.topics = extract_key_topics(transcription.text)
                     if enable_quotes:
                         st.session_state.quotes = extract_quotes(transcription.segments)
-                    if enable_speakers:
-                        st.session_state.speakers = detect_speakers(transcription.segments)
                 
                 st.success("✅ ¡Transcripción y análisis completados!")
                 st.balloons()
@@ -274,12 +300,19 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN =====
     with tab1:
-        # Búsqueda en transcripción
-        search_query = st.text_input(
-            "🔎 Buscar en la transcripción:", 
-            placeholder="Escribe para encontrar y escuchar un momento exacto...",
-            key="search_query"
-        )
+        # Búsqueda en transcripción con botón de limpiar
+        col_search1, col_search2 = st.columns([4, 1])
+        with col_search1:
+            search_query = st.text_input(
+                "🔎 Buscar en la transcripción:", 
+                placeholder="Escribe para encontrar y escuchar un momento exacto...",
+                key="search_query"
+            )
+        with col_search2:
+            st.write("")  # Espaciado para alinear
+            if st.button("🗑️ Limpiar búsqueda", use_container_width=True, disabled=not search_query):
+                st.session_state.search_query = ""
+                st.rerun()
         
         if search_query:
             with st.expander("Resultados de la búsqueda contextual", expanded=True):
@@ -359,7 +392,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 3: ANÁLISIS AVANZADO =====
     with tab3:
         # Sub-pestañas para análisis avanzado
-        subtab1, subtab2, subtab3 = st.tabs(["🏷️ Temas Clave", "💬 Citas Destacadas", "👥 Hablantes"])
+        subtab1, subtab2 = st.tabs(["🏷️ Temas Clave", "💬 Citas y Declaraciones"])
         
         with subtab1:
             if 'topics' in st.session_state:
@@ -374,61 +407,40 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         with subtab2:
             if 'quotes' in st.session_state and st.session_state.quotes:
                 st.markdown("### 💬 Citas y Declaraciones Relevantes")
+                st.caption(f"Se encontraron {len(st.session_state.quotes)} citas y declaraciones importantes")
+                
                 for idx, quote in enumerate(st.session_state.quotes):
                     with st.container():
-                        col_q1, col_q2 = st.columns([0.15, 0.85])
+                        # Indicador de tipo
+                        if quote['type'] == 'quote':
+                            type_badge = "🗣️ **Cita Textual**"
+                        else:
+                            type_badge = "📢 **Declaración**"
+                        
+                        st.markdown(type_badge)
+                        
+                        col_q1, col_q2 = st.columns([0.12, 0.88])
                         with col_q1:
                             if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
                                 st.session_state.audio_start_time = int(quote['start'])
                                 st.rerun()
                         with col_q2:
-                            st.markdown(f"💬 *{quote['text']}*")
+                            st.markdown(f"*{quote['text']}*")
+                            
+                            # Mostrar contexto expandible si está disponible
+                            if quote['full_context'] and quote['full_context'] != quote['text']:
+                                with st.expander("📄 Ver contexto completo"):
+                                    st.markdown(quote['full_context'])
+                        
                         st.markdown("---")
             else:
-                st.info("💬 No se identificaron citas relevantes o la función está desactivada.")
-        
-        with subtab3:
-            if 'speakers' in st.session_state:
-                st.markdown("### 👥 Detección de Hablantes")
-                current_speaker = None
-                for item in st.session_state.speakers:
-                    if item['speaker'] != current_speaker:
-                        st.markdown(f"#### {item['speaker']}")
-                        current_speaker = item['speaker']
-                    
-                    col_s1, col_s2 = st.columns([0.15, 0.85])
-                    with col_s1:
-                        if st.button(f"▶️ {item['time']}", key=f"speaker_{item['start']}"):
-                            st.session_state.audio_start_time = int(item['start'])
-                            st.rerun()
-                    with col_s2:
-                        st.markdown(f"{item['text']}")
-                
-                st.write("")
-                st.download_button(
-                    "💾 Descargar TXT con Hablantes",
-                    format_speaker_transcript(st.session_state.speakers),
-                    "transcripcion_speakers.txt",
-                    "text/plain",
-                    use_container_width=True
-                )
-            else:
-                st.warning("👥 **La detección de hablantes está desactivada**")
-                st.markdown("""
-                Para activar esta función:
-                1. Ve al **sidebar** (menú lateral izquierdo) ⬅️
-                2. Busca la sección **"🎯 Análisis Inteligente"**
-                3. Marca la casilla **"👥 Detectar hablantes"**
-                4. Sube un nuevo audio y transcribe
-                
-                Esta función identifica automáticamente cambios de hablante basándose en pausas en el audio.
-                """)
+                st.info("💬 No se identificaron citas o declaraciones relevantes. Asegúrate de activar la opción en el sidebar.")
     
     # Botón de limpiar (fuera de las pestañas)
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "topics", "quotes", "speakers", "search_query"]
+                        "summary", "topics", "quotes", "search_query"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
