@@ -93,6 +93,79 @@ def format_transcription_with_timestamps(data):
 
 # --- NUEVAS FUNCIONES AVANZADAS ---
 
+def convert_video_to_audio(video_bytes, video_filename):
+    """Convierte video (MP4) a audio (MP3) con compresión"""
+    try:
+        # Guardar video temporalmente
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(video_filename)[1]) as tmp_video:
+            tmp_video.write(video_bytes)
+            video_path = tmp_video.name
+        
+        # Crear archivo de salida temporal
+        audio_path = video_path.rsplit('.', 1)[0] + '_audio.mp3'
+        
+        # Extraer audio del video
+        video = VideoFileClip(video_path)
+        video.audio.write_audiofile(
+            audio_path,
+            codec='mp3',
+            bitrate='128k',  # Compresión moderada (buena calidad/tamaño)
+            verbose=False,
+            logger=None
+        )
+        video.close()
+        
+        # Leer el audio generado
+        with open(audio_path, 'rb') as f:
+            audio_bytes = f.read()
+        
+        # Limpiar archivos temporales
+        os.unlink(video_path)
+        os.unlink(audio_path)
+        
+        return audio_bytes, True
+    except Exception as e:
+        # Si falla, devolver el video original
+        return video_bytes, False
+
+def compress_audio(audio_bytes, original_filename):
+    """Comprime audio reduciendo bitrate"""
+    try:
+        # Guardar audio temporalmente
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(original_filename)[1]) as tmp_audio:
+            tmp_audio.write(audio_bytes)
+            audio_path = tmp_audio.name
+        
+        # Crear archivo comprimido
+        compressed_path = audio_path.rsplit('.', 1)[0] + '_compressed.mp3'
+        
+        # Comprimir
+        audio = AudioFileClip(audio_path)
+        audio.write_audiofile(
+            compressed_path,
+            codec='mp3',
+            bitrate='96k',  # Compresión alta (menor calidad, mucho más pequeño)
+            verbose=False,
+            logger=None
+        )
+        audio.close()
+        
+        # Leer el audio comprimido
+        with open(compressed_path, 'rb') as f:
+            compressed_bytes = f.read()
+        
+        # Limpiar archivos temporales
+        os.unlink(audio_path)
+        os.unlink(compressed_path)
+        
+        return compressed_bytes
+    except Exception as e:
+        return audio_bytes
+
+def get_file_size_mb(file_bytes):
+    """Calcula el tamaño del archivo en MB"""
+    return len(file_bytes) / (1024 * 1024)
+
 def generate_summary(transcription_text, client):
     """Genera un resumen inteligente usando Groq LLaMA"""
     try:
@@ -242,6 +315,17 @@ with st.sidebar:
     enable_quotes = st.checkbox("💬 Identificar citas y declaraciones", value=True)
     
     st.markdown("---")
+    st.subheader("🔧 Procesamiento de Audio")
+    
+    if MOVIEPY_AVAILABLE:
+        convert_video = st.checkbox("🎬 Convertir MP4 a MP3", value=True, 
+                                   help="Convierte videos a audio antes de transcribir")
+        compress_audio_option = st.checkbox("📦 Comprimir audio", value=False,
+                                           help="Reduce el tamaño del archivo (puede afectar calidad)")
+    else:
+        st.warning("⚠️ MoviePy no disponible. Instala para conversión de video.")
+    
+    st.markdown("---")
     st.info("💡 **Formatos soportados:** MP3, MP4, WAV, WEBM, M4A, MPEG, MPGA")
     st.success("✅ API Key configurada correctamente")
 
@@ -258,22 +342,50 @@ with col2:
         st.session_state.audio_start_time = 0
         st.session_state.clear_search_flag = True
         
-        with st.spinner("🔄 Transcribiendo con IA avanzada..."):
+        with st.spinner("🔄 Procesando archivo..."):
             try:
-                st.session_state.uploaded_audio_bytes = uploaded_file.getvalue()
+                file_bytes = uploaded_file.getvalue()
+                original_size = get_file_size_mb(file_bytes)
+                file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+                
+                # Determinar si es video y necesita conversión
+                is_video = file_extension in ['.mp4', '.mpeg', '.mpga', '.webm']
+                converted = False
+                
+                # Convertir video a audio si está habilitado
+                if is_video and MOVIEPY_AVAILABLE and convert_video:
+                    with st.spinner("🎬 Convirtiendo video a audio MP3..."):
+                        file_bytes, converted = convert_video_to_audio(file_bytes, uploaded_file.name)
+                        if converted:
+                            st.success(f"✅ Video convertido a MP3 ({original_size:.2f} MB → {get_file_size_mb(file_bytes):.2f} MB)")
+                
+                # Comprimir audio si está habilitado
+                if MOVIEPY_AVAILABLE and compress_audio_option:
+                    with st.spinner("📦 Comprimiendo audio..."):
+                        size_before = get_file_size_mb(file_bytes)
+                        file_bytes = compress_audio(file_bytes, uploaded_file.name)
+                        size_after = get_file_size_mb(file_bytes)
+                        reduction = ((size_before - size_after) / size_before) * 100
+                        st.success(f"✅ Audio comprimido ({size_before:.2f} MB → {size_after:.2f} MB | -{reduction:.1f}%)")
+                
+                st.session_state.uploaded_audio_bytes = file_bytes
+                st.session_state.original_filename = uploaded_file.name
                 
                 client = Groq(api_key=api_key)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp:
-                    tmp.write(st.session_state.uploaded_audio_bytes)
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
+                    tmp.write(file_bytes)
                     tmp_file_path = tmp.name
-                with open(tmp_file_path, "rb") as audio_file:
-                    transcription = client.audio.transcriptions.create(
-                        file=(uploaded_file.name, audio_file.read()),
-                        model=model_option,
-                        temperature=temperature,
-                        language=language,
-                        response_format="verbose_json"
-                    )
+                
+                with st.spinner("🔄 Transcribiendo con IA avanzada..."):
+                    with open(tmp_file_path, "rb") as audio_file:
+                        transcription = client.audio.transcriptions.create(
+                            file=(uploaded_file.name, audio_file.read()),
+                            model=model_option,
+                            temperature=temperature,
+                            language=language,
+                            response_format="verbose_json"
+                        )
+                
                 os.unlink(tmp_file_path)
                 st.session_state.transcription = transcription.text
                 st.session_state.transcription_data = transcription
