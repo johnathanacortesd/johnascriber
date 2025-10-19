@@ -29,11 +29,23 @@ def validate_password():
         st.session_state.password_correct = False
 
 if not st.session_state.password_correct:
-    st.title("Acceso Protegido")
-    st.markdown("Por favor, introduce la contraseña para usar el transcriptor.")
-    st.text_input("Contraseña", type="password", on_change=validate_password, key="password")
-    if "password" in st.session_state and not st.session_state.password_correct:
-        st.error("😕 Contraseña incorrecta. Inténtalo de nuevo.")
+    # Pantalla de login mejorada
+    st.markdown("""
+    <div style='text-align: center; padding: 2rem 0;'>
+        <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
+        <h2>Transcriptor Pro</h2>
+        <p style='color: #666; margin-bottom: 2rem;'>Análisis avanzado de audio con IA</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.text_input("🔐 Contraseña", type="password", on_change=validate_password, key="password")
+        
+        # Solo mostrar error si ya intentó y falló (no al inicio)
+        if st.session_state.get("password_attempted", False) and not st.session_state.password_correct:
+            st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
+    
     st.stop()
 
 # --- INICIO DE LA APP PRINCIPAL ---
