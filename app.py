@@ -250,8 +250,7 @@ with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         # Limpiar búsqueda anterior y resetear tiempo de audio
         st.session_state.audio_start_time = 0
-        if 'search_query' in st.session_state:
-            del st.session_state['search_query']
+        st.session_state.clear_search_flag = True
         
         with st.spinner("🔄 Transcribiendo con IA avanzada..."):
             try:
@@ -303,27 +302,25 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         # Búsqueda en transcripción con botón de limpiar
         col_search1, col_search2 = st.columns([4, 1])
         
-        # Determinar el valor del input basado en el flag
-        default_search = "" if st.session_state.get('clear_search_flag', False) else None
-        if default_search == "":
-            st.session_state.clear_search_flag = False
-        
         with col_search1:
-            if default_search is not None:
+            # Si hay flag de limpiar, crear input sin key para forzar valor vacío
+            if st.session_state.get('clear_search_flag', False):
                 search_query = st.text_input(
                     "🔎 Buscar en la transcripción:", 
                     value="",
                     placeholder="Escribe para encontrar y escuchar un momento exacto..."
                 )
+                st.session_state.clear_search_flag = False
             else:
                 search_query = st.text_input(
                     "🔎 Buscar en la transcripción:", 
-                    placeholder="Escribe para encontrar y escuchar un momento exacto..."
+                    placeholder="Escribe para encontrar y escuchar un momento exacto...",
+                    key="search_query"
                 )
         
         with col_search2:
             st.write("")  # Espaciado para alinear
-            if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query, key="clear_search_btn"):
+            if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query):
                 st.session_state.clear_search_flag = True
                 st.rerun()
         
