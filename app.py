@@ -302,25 +302,30 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     with tab1:
         # Búsqueda en transcripción con botón de limpiar
         col_search1, col_search2 = st.columns([4, 1])
+        
+        # Determinar el valor del input basado en el flag
+        default_search = "" if st.session_state.get('clear_search_flag', False) else None
+        if default_search == "":
+            st.session_state.clear_search_flag = False
+        
         with col_search1:
-            search_query = st.text_input(
-                "🔎 Buscar en la transcripción:", 
-                placeholder="Escribe para encontrar y escuchar un momento exacto...",
-                key="search_query"
-            )
+            if default_search is not None:
+                search_query = st.text_input(
+                    "🔎 Buscar en la transcripción:", 
+                    value="",
+                    placeholder="Escribe para encontrar y escuchar un momento exacto..."
+                )
+            else:
+                search_query = st.text_input(
+                    "🔎 Buscar en la transcripción:", 
+                    placeholder="Escribe para encontrar y escuchar un momento exacto..."
+                )
+        
         with col_search2:
             st.write("")  # Espaciado para alinear
             if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query, key="clear_search_btn"):
-                # No modificar el widget directamente, usar un flag
                 st.session_state.clear_search_flag = True
                 st.rerun()
-        
-        # Limpiar búsqueda si el flag está activo
-        if st.session_state.get('clear_search_flag', False):
-            st.session_state.clear_search_flag = False
-            if 'search_query' in st.session_state:
-                st.session_state.search_query = ""
-            st.rerun()
         
         if search_query:
             with st.expander("Resultados de la búsqueda contextual", expanded=True):
@@ -448,7 +453,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "topics", "quotes", "search_value", "search_input"]
+                        "summary", "topics", "quotes", "search_query", "clear_search_flag"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
