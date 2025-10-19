@@ -8,6 +8,13 @@ import streamlit.components.v1 as components
 from datetime import timedelta
 from collections import Counter
 
+# Importar para conversión de audio
+try:
+    from moviepy.editor import VideoFileClip, AudioFileClip
+    MOVIEPY_AVAILABLE = True
+except ImportError:
+    MOVIEPY_AVAILABLE = False
+
 # --- LÓGICA DE AUTENTICACIÓN ROBUSTA ---
 
 if "password_correct" not in st.session_state:
@@ -232,7 +239,6 @@ with st.sidebar:
     st.subheader("🎯 Análisis Inteligente")
     
     enable_summary = st.checkbox("📝 Generar resumen automático", value=True)
-    enable_topics = st.checkbox("🏷️ Extraer temas clave", value=True)
     enable_quotes = st.checkbox("💬 Identificar citas y declaraciones", value=True)
     
     st.markdown("---")
@@ -275,8 +281,6 @@ with col2:
                 with st.spinner("🧠 Generando análisis inteligente..."):
                     if enable_summary:
                         st.session_state.summary = generate_summary(transcription.text, client)
-                    if enable_topics:
-                        st.session_state.topics = extract_key_topics(transcription.text)
                     if enable_quotes:
                         st.session_state.quotes = extract_quotes(transcription.segments)
                 
@@ -401,56 +405,42 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 3: ANÁLISIS AVANZADO =====
     with tab3:
-        # Sub-pestañas para análisis avanzado
-        subtab1, subtab2 = st.tabs(["🏷️ Temas Clave", "💬 Citas y Declaraciones"])
-        
-        with subtab1:
-            if 'topics' in st.session_state:
-                st.markdown("### 🏷️ Palabras y Temas Más Frecuentes")
-                cols = st.columns(2)
-                for idx, (word, count) in enumerate(st.session_state.topics):
-                    with cols[idx % 2]:
-                        st.metric(label=word.capitalize(), value=f"{count} menciones")
-            else:
-                st.info("🏷️ El análisis de temas no fue generado. Activa la opción en el sidebar.")
-        
-        with subtab2:
-            if 'quotes' in st.session_state and st.session_state.quotes:
-                st.markdown("### 💬 Citas y Declaraciones Relevantes")
-                st.caption(f"Se encontraron {len(st.session_state.quotes)} citas y declaraciones importantes")
-                
-                for idx, quote in enumerate(st.session_state.quotes):
-                    with st.container():
-                        # Indicador de tipo
-                        if quote['type'] == 'quote':
-                            type_badge = "🗣️ **Cita Textual**"
-                        else:
-                            type_badge = "📢 **Declaración**"
+        if 'quotes' in st.session_state and st.session_state.quotes:
+            st.markdown("### 💬 Citas y Declaraciones Relevantes")
+            st.caption(f"Se encontraron {len(st.session_state.quotes)} citas y declaraciones importantes")
+            
+            for idx, quote in enumerate(st.session_state.quotes):
+                with st.container():
+                    # Indicador de tipo
+                    if quote['type'] == 'quote':
+                        type_badge = "🗣️ **Cita Textual**"
+                    else:
+                        type_badge = "📢 **Declaración**"
+                    
+                    st.markdown(type_badge)
+                    
+                    col_q1, col_q2 = st.columns([0.12, 0.88])
+                    with col_q1:
+                        if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
+                            st.session_state.audio_start_time = int(quote['start'])
+                            st.rerun()
+                    with col_q2:
+                        st.markdown(f"*{quote['text']}*")
                         
-                        st.markdown(type_badge)
-                        
-                        col_q1, col_q2 = st.columns([0.12, 0.88])
-                        with col_q1:
-                            if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
-                                st.session_state.audio_start_time = int(quote['start'])
-                                st.rerun()
-                        with col_q2:
-                            st.markdown(f"*{quote['text']}*")
-                            
-                            # Mostrar contexto expandible si está disponible
-                            if quote['full_context'] and quote['full_context'] != quote['text']:
-                                with st.expander("📄 Ver contexto completo"):
-                                    st.markdown(quote['full_context'])
-                        
-                        st.markdown("---")
-            else:
-                st.info("💬 No se identificaron citas o declaraciones relevantes. Asegúrate de activar la opción en el sidebar.")
+                        # Mostrar contexto expandible si está disponible
+                        if quote['full_context'] and quote['full_context'] != quote['text']:
+                            with st.expander("📄 Ver contexto completo"):
+                                st.markdown(quote['full_context'])
+                    
+                    st.markdown("---")
+        else:
+            st.info("💬 No se identificaron citas o declaraciones relevantes. Asegúrate de activar la opción en el sidebar.")
     
     # Botón de limpiar (fuera de las pestañas)
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "topics", "quotes", "search_query", "clear_search_flag"]
+                        "summary", "quotes", "search_query", "clear_search_flag"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
