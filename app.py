@@ -285,13 +285,11 @@ with st.sidebar:
     st.subheader("🔧 Procesamiento de Audio")
     
     if MOVIEPY_AVAILABLE:
-        convert_video = st.checkbox("🎬 Convertir MP4 a MP3", value=True, 
-                                   help="Convierte videos a audio antes de transcribir")
-        compress_audio_option = st.checkbox("📦 Comprimir audio", value=False,
-                                           help="Reduce el tamaño del archivo (puede afectar calidad)")
+        st.info("💡 Los archivos MP4 mayores a 25 MB se convertirán automáticamente a MP3")
+        compress_audio_option = st.checkbox("📦 Comprimir audio adicional", value=False,
+                                           help="Reduce más el tamaño (bitrate 96k). Solo para archivos muy grandes.")
     else:
         st.warning("⚠️ MoviePy no disponible. Instala para conversión de video.")
-        convert_video = False
         compress_audio_option = False
     
     st.markdown("---")
@@ -318,25 +316,29 @@ with col2:
                 original_size = get_file_size_mb(file_bytes)
                 file_extension = os.path.splitext(uploaded_file.name)[1].lower()
                 
-                # Determinar si es video y necesita conversión
+                # Determinar si es video
                 is_video = file_extension in ['.mp4', '.mpeg', '.mpga', '.webm']
                 converted = False
                 
-                # Convertir video a audio si está habilitado
-                if is_video and MOVIEPY_AVAILABLE and convert_video:
-                    with st.spinner("🎬 Convirtiendo video a audio MP3..."):
+                # Convertir SOLO si es video Y supera 25 MB
+                if is_video and MOVIEPY_AVAILABLE and original_size > 25:
+                    with st.spinner(f"🎬 Archivo de {original_size:.2f} MB detectado. Convirtiendo a MP3..."):
                         file_bytes, converted = convert_video_to_audio(file_bytes, uploaded_file.name)
                         if converted:
-                            st.success(f"✅ Video convertido a MP3 ({original_size:.2f} MB → {get_file_size_mb(file_bytes):.2f} MB)")
+                            new_size = get_file_size_mb(file_bytes)
+                            reduction = ((original_size - new_size) / original_size) * 100
+                            st.success(f"✅ Convertido a MP3: {original_size:.2f} MB → {new_size:.2f} MB (-{reduction:.1f}%)")
+                elif is_video and original_size > 25 and not MOVIEPY_AVAILABLE:
+                    st.warning(f"⚠️ Archivo de {original_size:.2f} MB. MoviePy no disponible para conversión.")
                 
-                # Comprimir audio si está habilitado
+                # Comprimir audio adicional si está habilitado
                 if MOVIEPY_AVAILABLE and compress_audio_option:
                     with st.spinner("📦 Comprimiendo audio..."):
                         size_before = get_file_size_mb(file_bytes)
                         file_bytes = compress_audio(file_bytes, uploaded_file.name)
                         size_after = get_file_size_mb(file_bytes)
                         reduction = ((size_before - size_after) / size_before) * 100
-                        st.success(f"✅ Audio comprimido ({size_before:.2f} MB → {size_after:.2f} MB | -{reduction:.1f}%)")
+                        st.success(f"✅ Audio comprimido: {size_before:.2f} MB → {size_after:.2f} MB (-{reduction:.1f}%)")
                 
                 st.session_state.uploaded_audio_bytes = file_bytes
                 st.session_state.original_filename = uploaded_file.name
@@ -447,13 +449,17 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         last_index = i
         
         # Mostrar transcripción completa con resaltado si hay búsqueda
+        st.markdown("**Transcripción completa:**")
         if search_query:
             pattern = re.compile(re.escape(search_query), re.IGNORECASE)
             highlighted_transcription = pattern.sub(r'<span style="background-color: black; color: red; padding: 2px 4px; border-radius: 3px; font-weight: bold;">\g<0></span>', st.session_state.transcription)
-            st.markdown("**Transcripción completa:**")
-            st.markdown(f'<div style="white-space: pre-wrap; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; max-height: 500px; overflow-y: auto;">{highlighted_transcription}</div>', unsafe_allow_html=True)
+            # Escapar caracteres HTML y mantener saltos de línea
+            highlighted_transcription = highlighted_transcription.replace('\n', '<br>')
+            st.markdown(f'<div style="white-space: pre-wrap; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem; background-color: white; max-height: 500px; overflow-y: auto; font-family: monospace; line-height: 1.6; color: #262730;">{highlighted_transcription}</div>', unsafe_allow_html=True)
         else:
-            st.text_area("Transcripción completa:", value=st.session_state.transcription, height=500)
+            # Sin búsqueda, mostrar en formato normal pero con estilo similar
+            transcription_html = st.session_state.transcription.replace('\n', '<br>')
+            st.markdown(f'<div style="white-space: pre-wrap; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem; background-color: white; max-height: 500px; overflow-y: auto; font-family: monospace; line-height: 1.6; color: #262730;">{transcription_html}</div>', unsafe_allow_html=True)
         
         # Botones de descarga para transcripción
         st.write("")
