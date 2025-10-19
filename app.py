@@ -196,7 +196,7 @@ def generate_summary(transcription_text, client):
                     "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) sobre el siguiente contenido. No uses bullet points, no uses listas numeradas, no uses introducciones como 'A continuación' o 'El resumen es'. Ve directo al contenido:\n\n{transcription_text}"
                 }
             ],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.3,
             max_tokens=500
         )
@@ -387,11 +387,27 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN =====
     with tab1:
+        # --- Estilos para una mejor legibilidad ---
+        HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
+        TRANSCRIPTION_BOX_STYLE = """
+            background-color: #0E1117;
+            color: #FAFAFA;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 1.5rem;
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: "Source Code Pro", "Consolas", monospace;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            font-size: 0.95rem;
+        """
+        # --- Fin de los estilos ---
+
         # Búsqueda en transcripción con botón de limpiar
         col_search1, col_search2 = st.columns([4, 1])
         
         with col_search1:
-            # Usar un campo normal sin key para evitar problemas de refresco
             search_query = st.text_input(
                 "🔎 Buscar en la transcripción:", 
                 value=st.session_state.get('last_search', ''),
@@ -399,7 +415,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 key=f"search_input_{st.session_state.get('search_counter', 0)}"
             )
             
-            # Actualizar última búsqueda
             if search_query != st.session_state.get('last_search', ''):
                 st.session_state.last_search = search_query
         
@@ -442,25 +457,29 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
                         with col_text:
                             if i in matching_indices:
-                                highlighted_text = pattern.sub(r'<span style="background-color: black; color: red; padding: 2px 4px; border-radius: 3px; font-weight: bold;">\g<0></span>', text)
+                                highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', text)
                                 st.markdown(highlighted_text, unsafe_allow_html=True)
                             else:
-                                st.markdown(f"<span style='color: #666;'>{text}</span>", unsafe_allow_html=True)
+                                # Contexto con color más sutil pero legible
+                                st.markdown(f"<span style='color: #888;'>{text}</span>", unsafe_allow_html=True)
                         last_index = i
         
-        # Mostrar transcripción completa con resaltado si hay búsqueda
+        # Mostrar transcripción completa con un diseño mejorado
         st.markdown("**Transcripción completa:**")
+        
+        # Preparar el contenido HTML
         if search_query:
             pattern = re.compile(re.escape(search_query), re.IGNORECASE)
-            highlighted_transcription = pattern.sub(r'<span style="background-color: black; color: red; padding: 2px 4px; border-radius: 3px; font-weight: bold;">\g<0></span>', st.session_state.transcription)
-            # Escapar caracteres HTML y mantener saltos de línea
-            highlighted_transcription = highlighted_transcription.replace('\n', '<br>')
-            st.markdown(f'<div style="white-space: pre-wrap; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem; background-color: white; max-height: 500px; overflow-y: auto; font-family: monospace; line-height: 1.6; color: #262730;">{highlighted_transcription}</div>', unsafe_allow_html=True)
+            # Aplicar resaltado
+            highlighted_transcription = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', st.session_state.transcription)
+            transcription_html = highlighted_transcription.replace('\n', '<br>')
         else:
-            # Sin búsqueda, mostrar en formato normal pero con estilo similar
+            # Sin búsqueda, solo preparar para HTML
             transcription_html = st.session_state.transcription.replace('\n', '<br>')
-            st.markdown(f'<div style="white-space: pre-wrap; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem; background-color: white; max-height: 500px; overflow-y: auto; font-family: monospace; line-height: 1.6; color: #262730;">{transcription_html}</div>', unsafe_allow_html=True)
-        
+            
+        # Renderizar el contenedor estilizado
+        st.markdown(f'<div style="{TRANSCRIPTION_BOX_STYLE}">{transcription_html}</div>', unsafe_allow_html=True)
+
         # Botones de descarga para transcripción
         st.write("")
         col_d1, col_d2, col_d3, col_d4 = st.columns([2, 2, 2, 1.5])
@@ -541,7 +560,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado con ❤️ para análisis periodístico</p>
+<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 <p>🔗 <a href='https://console.groq.com' target='_blank'>Groq Console</a> | 
 📚 <a href='https://console.groq.com/docs/models' target='_blank'>Modelos Disponibles</a></p>
 </div>""", unsafe_allow_html=True)
