@@ -250,8 +250,8 @@ with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         # Limpiar búsqueda anterior y resetear tiempo de audio
         st.session_state.audio_start_time = 0
-        if 'search_value' in st.session_state:
-            st.session_state.search_value = ""
+        if 'search_query' in st.session_state:
+            del st.session_state['search_query']
         
         with st.spinner("🔄 Transcribiendo con IA avanzada..."):
             try:
@@ -300,24 +300,27 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN =====
     with tab1:
-        # Inicializar el valor de búsqueda si no existe
-        if 'search_value' not in st.session_state:
-            st.session_state.search_value = ""
-        
         # Búsqueda en transcripción con botón de limpiar
         col_search1, col_search2 = st.columns([4, 1])
         with col_search1:
             search_query = st.text_input(
                 "🔎 Buscar en la transcripción:", 
                 placeholder="Escribe para encontrar y escuchar un momento exacto...",
-                value=st.session_state.search_value,
-                key="search_input"
+                key="search_query"
             )
         with col_search2:
             st.write("")  # Espaciado para alinear
-            if st.button("🗑️ Limpiar búsqueda", use_container_width=True, disabled=not search_query):
-                st.session_state.search_value = ""
+            if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query, key="clear_search_btn"):
+                # No modificar el widget directamente, usar un flag
+                st.session_state.clear_search_flag = True
                 st.rerun()
+        
+        # Limpiar búsqueda si el flag está activo
+        if st.session_state.get('clear_search_flag', False):
+            st.session_state.clear_search_flag = False
+            if 'search_query' in st.session_state:
+                st.session_state.search_query = ""
+            st.rerun()
         
         if search_query:
             with st.expander("Resultados de la búsqueda contextual", expanded=True):
