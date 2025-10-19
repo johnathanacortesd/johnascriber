@@ -562,7 +562,5 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado con ❤️ para análisis periodístico</p>
-<p>🔗 <a href='https://console.groq.com' target='_blank'>Groq Console</a> | 
-📚 <a href='https://console.groq.com/docs/models' target='_blank'>Modelos Disponibles</a></p>
+<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 </div>""", unsafe_allow_html=True)
