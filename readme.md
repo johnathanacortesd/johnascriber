@@ -1,7 +1,9 @@
 # 🎙️ Transcriptor Pro Johnascriptor: Análisis Avanzado de Audio con Groq y Streamlit
 
 ![alt text](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)
-![alt text](https://github.com/user-attachments/assets/867ac30a-49c1-4635-bdbb-9dfed9705475)
+
+![Transcriptor Pro](https://github.com/user-attachments/assets/89f6b618-8dd0-491b-9b98-45a76314a3eb)
+
 
 Transcriptor Pro Johnascriptor es una herramienta web que va más allá de la simple transcripción. Usa la velocidad de la API de Groq y la potencia de modelos de IA de última generación para convertir archivos de audio y video en texto, y luego generar análisis inteligentes como resúmenes ejecutivos y extracción de citas clave. Diseñada para analistas que necesitan resultados rápidos, precisos y procesables.
 
