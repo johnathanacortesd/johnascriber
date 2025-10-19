@@ -196,7 +196,9 @@ def generate_summary(transcription_text, client):
                     "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) sobre el siguiente contenido. No uses bullet points, no uses listas numeradas, no uses introducciones como 'A continuación' o 'El resumen es'. Ve directo al contenido:\n\n{transcription_text}"
                 }
             ],
-            model="llama-3.1-70b-versatile",
+            # --- ÚNICO CAMBIO REALIZADO AQUÍ ---
+            model="llama-3.3-70b-versatile",
+            # ------------------------------------
             temperature=0.3,
             max_tokens=500
         )
@@ -560,7 +562,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado con ❤️ para análisis periodístico</p>
 <p>🔗 <a href='https://console.groq.com' target='_blank'>Groq Console</a> | 
 📚 <a href='https://console.groq.com/docs/models' target='_blank'>Modelos Disponibles</a></p>
 </div>""", unsafe_allow_html=True)
