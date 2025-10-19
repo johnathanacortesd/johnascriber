@@ -250,8 +250,8 @@ with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         # Limpiar búsqueda anterior y resetear tiempo de audio
         st.session_state.audio_start_time = 0
-        if 'search_query' in st.session_state:
-            del st.session_state.search_query
+        if 'search_value' in st.session_state:
+            st.session_state.search_value = ""
         
         with st.spinner("🔄 Transcribiendo con IA avanzada..."):
             try:
@@ -300,18 +300,23 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN =====
     with tab1:
+        # Inicializar el valor de búsqueda si no existe
+        if 'search_value' not in st.session_state:
+            st.session_state.search_value = ""
+        
         # Búsqueda en transcripción con botón de limpiar
         col_search1, col_search2 = st.columns([4, 1])
         with col_search1:
             search_query = st.text_input(
                 "🔎 Buscar en la transcripción:", 
                 placeholder="Escribe para encontrar y escuchar un momento exacto...",
-                key="search_query"
+                value=st.session_state.search_value,
+                key="search_input"
             )
         with col_search2:
             st.write("")  # Espaciado para alinear
             if st.button("🗑️ Limpiar búsqueda", use_container_width=True, disabled=not search_query):
-                st.session_state.search_query = ""
+                st.session_state.search_value = ""
                 st.rerun()
         
         if search_query:
@@ -440,7 +445,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "topics", "quotes", "search_query"]
+                        "summary", "topics", "quotes", "search_value", "search_input"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
