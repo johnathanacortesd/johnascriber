@@ -35,7 +35,7 @@ if not st.session_state.password_correct:
     st.markdown("""
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
-        <h2>Transcriptor Pro</h2>
+        <h2>Transcriptor Pro - Johnascriptor</h2>
         <p style='color: #666; margin-bottom: 2rem;'>Análisis avanzado de audio con IA</p>
     </div>
     """, unsafe_allow_html=True)
@@ -52,7 +52,7 @@ if not st.session_state.password_correct:
 
 # --- INICIO DE LA APP PRINCIPAL ---
 
-st.set_page_config(page_title="Transcriptor Pro", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="🎙️", layout="wide")
 
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
@@ -258,7 +258,7 @@ def export_to_srt(data):
     return "\n".join(srt_content)
 
 # --- INTERFAZ DE LA APP ---
-st.title("🎙️ Transcriptor Pro")
+st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
@@ -562,5 +562,5 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro v2.0</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.0</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 </div>""", unsafe_allow_html=True)
