@@ -23,10 +23,12 @@ if "password_correct" not in st.session_state:
 def validate_password():
     if st.session_state.get("password") == st.secrets.get("PASSWORD"):
         st.session_state.password_correct = True
+        st.session_state.password_attempted = False
         if "password" in st.session_state:
             del st.session_state.password
     else:
         st.session_state.password_correct = False
+        st.session_state.password_attempted = True
 
 if not st.session_state.password_correct:
     # Pantalla de login mejorada
@@ -296,7 +298,7 @@ with st.sidebar:
     st.info("💡 **Formatos soportados:** MP3, MP4, WAV, WEBM, M4A, MPEG, MPGA")
     st.success("✅ API Key configurada correctamente")
 
-st.subheader("1. Sube tu archivo y presiona Transcribir")
+st.subheader("📤 Sube tu archivo de audio o video")
 col1, col2 = st.columns([3, 1])
 with col1:
     uploaded_file = st.file_uploader(
@@ -307,7 +309,8 @@ with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         # Limpiar búsqueda anterior y resetear tiempo de audio
         st.session_state.audio_start_time = 0
-        st.session_state.clear_search_flag = True
+        st.session_state.last_search = ""
+        st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         
         with st.spinner("🔄 Procesando archivo..."):
             try:
@@ -370,7 +373,7 @@ with col2:
 
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
     st.markdown("---")
-    st.subheader("2. Reproduce y Analiza")
+    st.subheader("🎧 Reproduce y Analiza el Contenido")
     
     # Reproductor de audio
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
@@ -386,25 +389,23 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         col_search1, col_search2 = st.columns([4, 1])
         
         with col_search1:
-            # Si hay flag de limpiar, crear input sin key para forzar valor vacío
-            if st.session_state.get('clear_search_flag', False):
-                search_query = st.text_input(
-                    "🔎 Buscar en la transcripción:", 
-                    value="",
-                    placeholder="Escribe para encontrar y escuchar un momento exacto..."
-                )
-                st.session_state.clear_search_flag = False
-            else:
-                search_query = st.text_input(
-                    "🔎 Buscar en la transcripción:", 
-                    placeholder="Escribe para encontrar y escuchar un momento exacto...",
-                    key="search_query"
-                )
+            # Usar un campo normal sin key para evitar problemas de refresco
+            search_query = st.text_input(
+                "🔎 Buscar en la transcripción:", 
+                value=st.session_state.get('last_search', ''),
+                placeholder="Escribe para encontrar y escuchar un momento exacto...",
+                key=f"search_input_{st.session_state.get('search_counter', 0)}"
+            )
+            
+            # Actualizar última búsqueda
+            if search_query != st.session_state.get('last_search', ''):
+                st.session_state.last_search = search_query
         
         with col_search2:
             st.write("")  # Espaciado para alinear
             if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query):
-                st.session_state.clear_search_flag = True
+                st.session_state.last_search = ""
+                st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
                 st.rerun()
         
         if search_query:
@@ -439,13 +440,20 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
                         with col_text:
                             if i in matching_indices:
-                                highlighted_text = pattern.sub(r'<mark>\g<0></mark>', text)
+                                highlighted_text = pattern.sub(r'<span style="background-color: black; color: red; padding: 2px 4px; border-radius: 3px; font-weight: bold;">\g<0></span>', text)
                                 st.markdown(highlighted_text, unsafe_allow_html=True)
                             else:
                                 st.markdown(f"<span style='color: #666;'>{text}</span>", unsafe_allow_html=True)
                         last_index = i
         
-        st.text_area("Transcripción completa:", value=st.session_state.transcription, height=500)
+        # Mostrar transcripción completa con resaltado si hay búsqueda
+        if search_query:
+            pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+            highlighted_transcription = pattern.sub(r'<span style="background-color: black; color: red; padding: 2px 4px; border-radius: 3px; font-weight: bold;">\g<0></span>', st.session_state.transcription)
+            st.markdown("**Transcripción completa:**")
+            st.markdown(f'<div style="white-space: pre-wrap; padding: 10px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; max-height: 500px; overflow-y: auto;">{highlighted_transcription}</div>', unsafe_allow_html=True)
+        else:
+            st.text_area("Transcripción completa:", value=st.session_state.transcription, height=500)
         
         # Botones de descarga para transcripción
         st.write("")
@@ -519,7 +527,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "quotes", "search_query", "clear_search_flag", "original_filename"]
+                        "summary", "quotes", "last_search", "search_counter", "original_filename"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
