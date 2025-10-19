@@ -91,7 +91,7 @@ def format_transcription_with_timestamps(data):
     ]
     return "\n".join(lines)
 
-# --- NUEVAS FUNCIONES AVANZADAS ---
+# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
 
 def convert_video_to_audio(video_bytes, video_filename):
     """Convierte video (MP4) a audio (MP3) con compresión"""
@@ -166,6 +166,8 @@ def get_file_size_mb(file_bytes):
     """Calcula el tamaño del archivo en MB"""
     return len(file_bytes) / (1024 * 1024)
 
+# --- FUNCIONES DE ANÁLISIS ---
+
 def generate_summary(transcription_text, client):
     """Genera un resumen inteligente usando Groq LLaMA"""
     try:
@@ -187,21 +189,6 @@ def generate_summary(transcription_text, client):
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Error al generar resumen: {str(e)}"
-
-def extract_key_topics(transcription_text):
-    """Extrae palabras clave y temas principales"""
-    stop_words = {'el', 'la', 'de', 'que', 'y', 'a', 'en', 'un', 'ser', 'se', 'no', 'haber', 
-                  'por', 'con', 'su', 'para', 'como', 'estar', 'tener', 'le', 'lo', 'todo',
-                  'pero', 'más', 'hacer', 'o', 'poder', 'decir', 'este', 'ir', 'otro', 'ese',
-                  'es', 'son', 'al', 'del', 'una', 'los', 'las', 'unos', 'unas', 'ya', 'muy',
-                  'sin', 'sobre', 'también', 'me', 'hasta', 'hay', 'donde', 'quien', 'desde',
-                  'todos', 'durante', 'según', 'sin', 'entre', 'cuando', 'él', 'ella', 'sido'}
-    
-    words = re.findall(r'\b[a-záéíóúñ]{4,}\b', transcription_text.lower())
-    filtered_words = [w for w in words if w not in stop_words]
-    
-    word_freq = Counter(filtered_words)
-    return word_freq.most_common(10)
 
 def extract_quotes(segments):
     """Identifica citas textuales y declaraciones importantes con contexto mejorado"""
@@ -254,40 +241,6 @@ def export_to_srt(data):
         srt_content.append(f"{i}\n{start},000 --> {end},000\n{text}\n")
     return "\n".join(srt_content)
 
-def detect_speakers(segments):
-    """Detecta cambios de hablante por pausas prolongadas"""
-    speakers = []
-    current_speaker = 1
-    silence_threshold = 2.0
-    
-    for i, seg in enumerate(segments):
-        if i > 0:
-            gap = seg['start'] - segments[i-1]['end']
-            if gap > silence_threshold:
-                current_speaker += 1
-        
-        speakers.append({
-            'speaker': f'Hablante {current_speaker}',
-            'time': format_timestamp(seg['start']),
-            'text': seg['text'].strip(),
-            'start': seg['start']
-        })
-    
-    return speakers
-
-def format_speaker_transcript(speakers):
-    """Formatea transcripción con identificación de hablantes"""
-    result = []
-    current_speaker = None
-    
-    for item in speakers:
-        if item['speaker'] != current_speaker:
-            result.append(f"\n{item['speaker']} ({item['time']}):")
-            current_speaker = item['speaker']
-        result.append(f"{item['text']}")
-    
-    return "\n".join(result)
-
 # --- INTERFAZ DE LA APP ---
 st.title("🎙️ Transcriptor Pro - Análisis Avanzado de Audio")
 
@@ -324,6 +277,8 @@ with st.sidebar:
                                            help="Reduce el tamaño del archivo (puede afectar calidad)")
     else:
         st.warning("⚠️ MoviePy no disponible. Instala para conversión de video.")
+        convert_video = False
+        compress_audio_option = False
     
     st.markdown("---")
     st.info("💡 **Formatos soportados:** MP3, MP4, WAV, WEBM, M4A, MPEG, MPGA")
@@ -410,8 +365,8 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     st.write("")
     
-    # PESTAÑAS PRINCIPALES: Transcripción | Resumen | Análisis Avanzado
-    tab1, tab2, tab3 = st.tabs(["📝 Transcripción", "📊 Resumen", "🔬 Análisis Avanzado"])
+    # PESTAÑAS PRINCIPALES: Transcripción | Resumen | Citas y Declaraciones
+    tab1, tab2, tab3 = st.tabs(["📝 Transcripción", "📊 Resumen", "💬 Citas y Declaraciones"])
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN =====
     with tab1:
@@ -515,7 +470,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         else:
             st.info("📝 El resumen no fue generado. Activa la opción en el sidebar y vuelve a transcribir.")
     
-    # ===== PESTAÑA 3: ANÁLISIS AVANZADO =====
+    # ===== PESTAÑA 3: CITAS Y DECLARACIONES =====
     with tab3:
         if 'quotes' in st.session_state and st.session_state.quotes:
             st.markdown("### 💬 Citas y Declaraciones Relevantes")
@@ -552,7 +507,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "quotes", "search_query", "clear_search_flag"]
+                        "summary", "quotes", "search_query", "clear_search_flag", "original_filename"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
