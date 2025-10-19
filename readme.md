@@ -2,7 +2,7 @@
 
 [![Ver Demo en YouTube](https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white)](https://youtu.be/J0HS74nG--I)
 
-![alt text](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)
+[![Abrir en Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://johnascriber.streamlit.app/)
 
 ![Transcriptor Pro](https://github.com/user-attachments/assets/b02ab74f-d210-40e5-b92e-4a831af668ee)
 
