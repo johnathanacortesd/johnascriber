@@ -105,154 +105,6 @@ def format_transcription_with_timestamps(data):
     ]
     return "\n".join(lines)
 
-# --- NUEVA FUNCIÓN: POST-PROCESAMIENTO PARA TILDES ---
-def fix_spanish_encoding(text):
-    """
-    Corrige problemas comunes de encoding en español,
-    restaura tildes perdidas y repara palabras cortadas
-    """
-    if not text:
-        return text
-    
-    # Corregir problemas de encoding comunes primero
-    encoding_fixes = {
-        'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú',
-        'Ã±': 'ñ', 'Ã': 'Ñ',
-        'Â¿': '¿', 'Â¡': '¡',
-        'Ã': 'Á', 'Ã': 'É', 'Ã': 'Í', 'Ã': 'Ó', 'Ã': 'Ú',
-    }
-    
-    result = text
-    for wrong, correct in encoding_fixes.items():
-        result = result.replace(wrong, correct)
-    
-    # NUEVO: Reparar palabras cortadas después de vocales (el problema principal)
-    # Patrón: detecta palabras que terminan abruptamente después de una vocal
-    truncated_words = {
-        # Palabras comunes cortadas
-        r'\bfundaci\b': 'Fundación',
-        r'\bFundaci\b': 'Fundación',
-        r'\binformaci\b': 'información',
-        r'\bInformaci\b': 'Información',
-        r'\bsituaci\b': 'situación',
-        r'\bSituaci\b': 'Situación',
-        r'\bdeclaraci\b': 'declaración',
-        r'\bDeclaraci\b': 'Declaración',
-        r'\bnaci\b': 'nación',
-        r'\bNaci\b': 'Nación',
-        r'\bpoblaci\b': 'población',
-        r'\bPoblaci\b': 'Población',
-        r'\breuni\b': 'reunión',
-        r'\bReuni\b': 'Reunión',
-        r'\bopini\b': 'opinión',
-        r'\bOpini\b': 'Opinión',
-        r'\bresoluci\b': 'resolución',
-        r'\bResoluci\b': 'Resolución',
-        r'\borganizaci\b': 'organización',
-        r'\bOrganizaci\b': 'Organización',
-        r'\bprotecci\b': 'protección',
-        r'\bProtecci\b': 'Protección',
-        r'\bparticipaci\b': 'participación',
-        r'\bParticipaci\b': 'Participación',
-        r'\binvestigaci\b': 'investigación',
-        r'\bInvestigaci\b': 'Investigación',
-        r'\beducaci\b': 'educación',
-        r'\bEducaci\b': 'Educación',
-        r'\bsanci\b': 'sanción',
-        r'\bSanci\b': 'Sanción',
-        r'\bcomunicaci\b': 'comunicación',
-        r'\bComunicaci\b': 'Comunicación',
-        r'\boperaci\b': 'operación',
-        r'\bOperaci\b': 'Operación',
-        r'\brelaci\b': 'relación',
-        r'\bRelaci\b': 'Relación',
-        r'\bpol[ií]tica?\b': 'política',
-        r'\bPol[ií]tica?\b': 'Política',
-        r'\bcompa[ñn][ií]a?\b': 'compañía',
-        r'\bCompa[ñn][ií]a?\b': 'Compañía',
-        r'\beconom[ií]a?\b': 'economía',
-        r'\bEconom[ií]a?\b': 'Economía',
-        r'\bpa[ií]s\b': 'país',
-        r'\bPa[ií]s\b': 'País',
-        r'\bd[ií]a\b': 'día',
-        r'\bD[ií]a\b': 'Día',
-        r'\bAmazon[ií]a?\b': 'Amazonía',
-        r'\bColomb[ií]a?\b': 'Colombia',
-        r'\bgeograf[ií]a?\b': 'geografía',
-        r'\bGeograf[ií]a?\b': 'Geografía',
-    }
-    
-    for pattern, replacement in truncated_words.items():
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-    
-    # Diccionario de correcciones contextuales para palabras comunes sin tilde
-    contextual_corrections = [
-        # Palabras muy comunes que casi siempre llevan tilde
-        (r'\b([Ee])sta\b(?=\s+(en|pasando|sucediendo|diciendo|siendo))', r'\1stá'),
-        (r'\b([Ee])stas\b(?=\s+(en|pasando))', r'\1stás'),
-        (r'\b([Ee])ste\b(?=\s+(es|fue))', r'\1ste'),
-        (r'\b([Mm])as\b(?!\s+que)', r'\1ás'),  # "más" excepto en "mas que"
-        (r'\b([Ss])i\b(?=\s*[,.]|\s+es\b)', r'\1í'),  # "sí" antes de puntuación o "es"
-        (r'\b([Tt])u\b(?=\s+(tienes|puedes|debes|eres|casa|familia))', r'\1ú'),
-        (r'\b([Mm])i\b(?=\s*[,.])', r'\1í'),  # "mí" antes de puntuación
-        (r'\bque\b(?=\s+(paso|pasa|sucede|tal|hora))', 'qué'),
-        (r'\bQue\b(?=\s+(paso|pasa|sucede|tal|hora))', 'Qué'),
-        
-        # Palabras de noticias sin tilde
-        (r'\b([Pp])olitica\b', r'\1olítica'),
-        (r'\b([Pp])ublico\b(?!\s+(en|su))', r'\1úblico'),
-        (r'\b([Ee])conomia\b', r'\1conomía'),
-        (r'\b([Nn])acion\b', r'\1ación'),
-        (r'\b([Ss])ituacion\b', r'\1ituación'),
-        (r'\b([Dd])eclaracion\b', r'\1eclaración'),
-        (r'\b([Ii])nformacion\b', r'\1nformación'),
-        (r'\b([Gg])obierno\b', r'\1obierno'),
-        (r'\b([Pp])ais\b', r'\1aís'),
-        (r'\b([Dd])ia\b(?=\s+(de|en))', r'\1ía'),
-        (r'\b([Aa])udio\b', r'\1udio'),
-        (r'\b([Vv])ideo\b', r'\1ideo'),
-        
-        # Interrogativos y exclamativos
-        (r'\b([Cc])omo\b(?=\s+(esta|estas|fue|es))', r'\1ómo'),
-        (r'\b([Dd])onde\b(?!\s+(esta|vive))', r'\1ónde'),
-        (r'\b([Cc])uando\b(?!\s+(era|fue))', r'\1uándo'),
-        (r'\b([Qq])uien\b', r'\1uién'),
-        (r'\b([Qq])uienes\b', r'\1uiénes'),
-    ]
-    
-    for pattern, replacement in contextual_corrections:
-        result = re.sub(pattern, replacement, result)
-    
-    return result
-
-def check_transcription_quality(text):
-    """Detecta posibles problemas de encoding o tildes faltantes"""
-    if not text:
-        return []
-    
-    issues = []
-    
-    # Verificar caracteres extraños de encoding
-    if any(char in text for char in ['Ã', 'Â', 'â', 'º', '°']):
-        issues.append("⚠️ Detectados posibles problemas de encoding - Se aplicó corrección automática")
-    
-    # Contar palabras comunes sin tildes (indicador de calidad)
-    suspicious_patterns = [
-        r'\besta\s+(?:en|pasando)',
-        r'\bmas\s+(?!que)',
-        r'\bpolitica\b',
-        r'\bpublico\b',
-        r'\beconomia\b',
-        r'\bnacion\b',
-    ]
-    
-    suspicious_count = sum(len(re.findall(pattern, text, re.IGNORECASE)) for pattern in suspicious_patterns)
-    
-    if suspicious_count > 3:
-        issues.append(f"ℹ️ Se detectaron {suspicious_count} palabras comunes sin tilde - Se aplicaron correcciones contextuales")
-    
-    return issues
-
 # --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
 
 def convert_video_to_audio(video_bytes, video_filename):
@@ -271,7 +123,7 @@ def convert_video_to_audio(video_bytes, video_filename):
         video.audio.write_audiofile(
             audio_path,
             codec='mp3',
-            bitrate='128k',  # Compresión moderada (buena calidad/tamaño)
+            bitrate='192k',  # Mejora: bitrate más alto para mejor calidad
             verbose=False,
             logger=None
         )
@@ -306,7 +158,7 @@ def compress_audio(audio_bytes, original_filename):
         audio.write_audiofile(
             compressed_path,
             codec='mp3',
-            bitrate='96k',  # Compresión alta (menor calidad, mucho más pequeño)
+            bitrate='128k',  # Mejora: bitrate más alto para mejor calidad
             verbose=False,
             logger=None
         )
@@ -337,11 +189,11 @@ def generate_summary(transcription_text, client):
             messages=[
                 {
                     "role": "system",
-                    "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes en formato de párrafo corrido, profesionales y concisos. IMPORTANTE: Mantén todas las tildes y acentos correctos en español."
+                    "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes en formato de párrafo corrido, profesionales y concisos."
                 },
                 {
                     "role": "user",
-                    "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) sobre el siguiente contenido. No uses bullet points, no uses listas numeradas, no uses introducciones como 'A continuación' o 'El resumen es'. Ve directo al contenido. Mantén todas las tildes correctas:\n\n{transcription_text}"
+                    "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) sobre el siguiente contenido. No uses bullet points, no uses listas numeradas, no uses introducciones como 'A continuación' o 'El resumen es'. Ve directo al contenido:\n\n{transcription_text}"
                 }
             ],
             model="llama-3.3-70b-versatile",
@@ -403,6 +255,28 @@ def export_to_srt(data):
         srt_content.append(f"{i}\n{start},000 --> {end},000\n{text}\n")
     return "\n".join(srt_content)
 
+def correct_transcription(transcription_text, client):
+    """Corrige la transcripción usando LLM para agregar tildes y corregir cortes"""
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Eres un corrector ortográfico experto en español de noticias. Corrige tildes, acentos y palabras cortadas (ej. 'qu' a 'qué', 'por qu' a 'por qué', 'Fundaci' a 'Fundación'). Une segmentos incompletos, mantén el significado original y asegura fluidez en contextos de documentales, noticias y entretenimiento sostenible."
+                },
+                {
+                    "role": "user",
+                    "content": f"Corrige la ortografía en español, agrega tildes donde falten, une palabras cortadas y mejora la coherencia: {transcription_text}"
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.0,
+            max_tokens=2048  # Aumentado para manejar transcripciones más largas
+        )
+        return chat_completion.choices[0].message.content
+    except Exception as e:
+        return transcription_text  # Si falla, devuelve original
+
 # --- INTERFAZ DE LA APP ---
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
@@ -414,21 +288,21 @@ with st.sidebar:
         options=[
             "whisper-large-v3",
             "whisper-large-v3-turbo",
+            "distil-whisper-large-v3-en"
         ],
         index=0,
-        help="Large-v3: Máxima precisión para español con tildes (RECOMENDADO) | Turbo: Más rápido pero puede omitir acentos"
+        help="Large-v3: Máxima precisión (recomendado para español) | Turbo: Más rápido | Distil: Inglés optimizado"
     )
     
     language = st.selectbox("Idioma", options=["es", "en", "fr", "de", "it", "pt", "ja", "ko", "zh"], index=0)
-    temperature = st.slider("Temperatura", 0.0, 1.0, 0.0, 0.1, help="Para español, mantén en 0.0 para máxima precisión con tildes")
+    temperature = st.slider("Temperatura", 0.0, 1.0, 0.0, 0.1, help="0 = más preciso, 1 = más creativo")
     
     st.markdown("---")
     st.subheader("🎯 Análisis Inteligente")
     
     enable_summary = st.checkbox("📝 Generar resumen automático", value=True)
     enable_quotes = st.checkbox("💬 Identificar citas y declaraciones", value=True)
-    enable_tilde_fix = st.checkbox("✨ Corrección automática de tildes", value=True, 
-                                    help="Aplica post-procesamiento para corregir tildes y acentos en español")
+    enable_correction = st.checkbox("🛠️ Corregir transcripción con IA (para tildes y cortes)", value=True)
     
     st.markdown("---")
     st.subheader("🔧 Procesamiento de Audio")
@@ -436,10 +310,12 @@ with st.sidebar:
     if MOVIEPY_AVAILABLE:
         st.info("💡 Los archivos MP4 mayores a 25 MB se convertirán automáticamente a MP3")
         compress_audio_option = st.checkbox("📦 Comprimir audio adicional", value=False,
-                                           help="Reduce más el tamaño (bitrate 96k). Solo para archivos muy grandes.")
+                                           help="Reduce más el tamaño (bitrate 128k). Solo para archivos muy grandes. Evítalo para máxima precisión.")
+        avoid_high_compression = st.checkbox("🚫 Evitar compresión alta para precisión (recomendado para noticias)", value=True)
     else:
         st.warning("⚠️ MoviePy no disponible. Instala para conversión de video.")
         compress_audio_option = False
+        avoid_high_compression = False
     
     st.markdown("---")
     st.info("💡 **Formatos soportados:** MP3, MP4, WAV, WEBM, M4A, MPEG, MPGA")
@@ -480,8 +356,8 @@ with col2:
                 elif is_video and original_size > 25 and not MOVIEPY_AVAILABLE:
                     st.warning(f"⚠️ Archivo de {original_size:.2f} MB. MoviePy no disponible para conversión.")
                 
-                # Comprimir audio adicional si está habilitado
-                if MOVIEPY_AVAILABLE and compress_audio_option:
+                # Comprimir audio adicional si está habilitado y no se evita alta compresión
+                if MOVIEPY_AVAILABLE and compress_audio_option and not avoid_high_compression:
                     with st.spinner("📦 Comprimiendo audio..."):
                         size_before = get_file_size_mb(file_bytes)
                         file_bytes = compress_audio(file_bytes, uploaded_file.name)
@@ -497,52 +373,47 @@ with col2:
                     tmp.write(file_bytes)
                     tmp_file_path = tmp.name
                 
+                # Mejora: Verificar duración del audio
+                if MOVIEPY_AVAILABLE:
+                    audio_clip = AudioFileClip(tmp_file_path)
+                    duration_minutes = audio_clip.duration / 60
+                    audio_clip.close()
+                    if duration_minutes > 60:
+                        st.warning(f"⚠️ Audio largo ({duration_minutes:.1f} min). Posible truncado; considera dividir el archivo.")
+                
                 with st.spinner("🔄 Transcribiendo con IA avanzada..."):
                     with open(tmp_file_path, "rb") as audio_file:
-                        # Leer el contenido del archivo
-                        audio_content = audio_file.read()
-                        
-                        # Crear nombre de archivo con encoding explícito
-                        safe_filename = uploaded_file.name.encode('utf-8').decode('utf-8')
-                        
-                        # Prompt optimizado para español con tildes
-                        spanish_prompt = "Transcripción en español con acentos correctos: á, é, í, ó, ú, ñ. Palabras comunes: más, está, política, nación, información."
-                        
                         transcription = client.audio.transcriptions.create(
-                            file=(safe_filename, audio_content),
+                            file=(uploaded_file.name, audio_file.read()),
                             model=model_option,
                             temperature=temperature,
                             language=language,
                             response_format="verbose_json",
-                            prompt=spanish_prompt if language == "es" else None
+                            prompt="Transcripción precisa de noticias y documentales en español. Incluye tildes y acentos correctamente en palabras como qué, por qué, Fundación, Amazonía, lanzó, septiembre. Evita cortar palabras con tildes: política, economía, México, España, América Latina, documental, sostenible."  # Mejora: Prompt más específico para tildes y cortes comunes
                         )
                 
                 os.unlink(tmp_file_path)
                 
-                # Post-procesar para corregir tildes si está habilitado
-                if enable_tilde_fix and language == "es":
-                    with st.spinner("✨ Aplicando correcciones de tildes..."):
-                        transcription_text = fix_spanish_encoding(transcription.text)
-                        
-                        # También corregir los segmentos individuales
-                        if hasattr(transcription, 'segments'):
-                            for segment in transcription.segments:
-                                segment['text'] = fix_spanish_encoding(segment['text'])
-                        
-                        # Verificar calidad
-                        quality_issues = check_transcription_quality(transcription_text)
-                        if quality_issues:
-                            for issue in quality_issues:
-                                st.info(issue)
-                else:
-                    transcription_text = transcription.text
+                # Mejora: Reconstruir texto completo de segmentos para evitar truncados
+                full_text = " ".join([seg['text'].strip() for seg in transcription.segments])
                 
-                st.session_state.transcription = transcription_text
+                # Mejora: Fuerza UTF-8 para tildes
+                full_text = full_text.encode('utf-8').decode('utf-8')
+                
+                # Mejora: Corrección opcional con LLM, con prompt mejorado
+                if enable_correction:
+                    with st.spinner("🛠️ Corrigiendo transcripción con IA..."):
+                        full_text = correct_transcription(full_text, client)
+                
+                st.session_state.transcription = full_text
                 st.session_state.transcription_data = transcription
+                
+                # Debug: Mostrar info de transcripción
+                st.write(f"Debug: {len(transcription.segments)} segmentos detectados. Texto total: {len(full_text)} chars.")
                 
                 with st.spinner("🧠 Generando análisis inteligente..."):
                     if enable_summary:
-                        st.session_state.summary = generate_summary(transcription_text, client)
+                        st.session_state.summary = generate_summary(full_text, client)
                     if enable_quotes:
                         st.session_state.quotes = extract_quotes(transcription.segments)
                 
@@ -606,7 +477,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         if search_query:
             with st.expander("Resultados de la búsqueda contextual", expanded=True):
                 segments = st.session_state.transcription_data.segments
-                pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+                pattern = re.compile(re.escape(search_query), re.IGNORECASE | re.UNICODE)  # Mejora: re.UNICODE para tildes
                 matching_indices = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
 
                 if not matching_indices:
@@ -647,7 +518,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         
         # Preparar el contenido HTML
         if search_query:
-            pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+            pattern = re.compile(re.escape(search_query), re.IGNORECASE | re.UNICODE)  # Mejora: re.UNICODE
             # Aplicar resaltado
             highlighted_transcription = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', st.session_state.transcription)
             transcription_html = highlighted_transcription.replace('\n', '<br>')
@@ -662,33 +533,13 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.write("")
         col_d1, col_d2, col_d3, col_d4 = st.columns([2, 2, 2, 1.5])
         with col_d1:
-            # Asegurar encoding UTF-8
-            transcription_utf8 = st.session_state.transcription.encode('utf-8').decode('utf-8')
-            st.download_button(
-                "💾 Descargar TXT Simple", 
-                transcription_utf8.encode('utf-8'),
-                "transcripcion.txt", 
-                "text/plain; charset=utf-8",
-                use_container_width=True
-            )
+            st.download_button("💾 Descargar TXT Simple", st.session_state.transcription, "transcripcion.txt", "text/plain", use_container_width=True)
         with col_d2:
             timestamped_text = format_transcription_with_timestamps(st.session_state.transcription_data)
-            st.download_button(
-                "💾 TXT con Tiempos", 
-                timestamped_text.encode('utf-8'),
-                "transcripcion_tiempos.txt", 
-                "text/plain; charset=utf-8",
-                use_container_width=True
-            )
+            st.download_button("💾 TXT con Tiempos", timestamped_text, "transcripcion_tiempos.txt", "text/plain", use_container_width=True)
         with col_d3:
             srt_content = export_to_srt(st.session_state.transcription_data)
-            st.download_button(
-                "💾 SRT Subtítulos", 
-                srt_content.encode('utf-8'),
-                "subtitulos.srt", 
-                "text/plain; charset=utf-8",
-                use_container_width=True
-            )
+            st.download_button("💾 SRT Subtítulos", srt_content, "subtitulos.srt", "text/plain", use_container_width=True)
         with col_d4:
             create_copy_button(st.session_state.transcription)
     
@@ -703,9 +554,9 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             with col_s1:
                 st.download_button(
                     "💾 Descargar Resumen",
-                    st.session_state.summary.encode('utf-8'),
+                    st.session_state.summary,
                     "resumen.txt",
-                    "text/plain; charset=utf-8",
+                    "text/plain",
                     use_container_width=True
                 )
             with col_s2:
@@ -759,5 +610,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
 <p><strong>Transcriptor Pro - Johnascriptor - v2.1</strong> - Desarrollado por Johnathan Cortés 🤖</p>
-<p style='font-size: 0.85rem;'>✨ Con corrección avanzada de tildes para español</p>
 </div>""", unsafe_allow_html=True)
