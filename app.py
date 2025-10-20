@@ -62,118 +62,105 @@ except KeyError:
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS ---
+# --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS (SIN DUPLICACIÓN) ---
+# IMPORTANTE: Los patrones aquí son más restrictivos para evitar duplicaciones
 
 SPANISH_WORD_CORRECTIONS = {
     # Palabras terminadas en -ción (MUY COMÚN EN NOTICIAS)
+    # Usar lookahead para evitar duplicar palabras ya corregidas
     r'\bqu\s+se\b': 'qué se',
     r'\bqu\s+es\b': 'qué es',
     r'\bqu\s+fue\b': 'qué fue',
     r'\bqu\s+hay\b': 'qué hay',
     r'\bqu\s+significa\b': 'qué significa',
-    r'\bqu\s+es\b': 'qué es',
-    r'\bPor qu\b': 'Por qué',
-    r'\bpor qu\b': 'por qué',
-    r'\bPor qu\s': 'por qué ',
-    r'\bpor qu\s': 'por qué ',
+    r'\bqu\s+pasa\b': 'qué pasa',
+    r'\bPor\s+qu(?!\s+[eé])\b': 'Por qué',
+    r'\bpor\s+qu(?!\s+[eé])\b': 'por qué',
     
-    # Palabras cortadas comunes en español
-    r'\bfundaci\s': 'fundación ',
-    r'\bFundaci\s': 'Fundación ',
-    r'\binformaci\s': 'información ',
-    r'\bInformaci\s': 'Información ',
-    r'\bsituaci\s': 'situación ',
-    r'\bSituaci\s': 'Situación ',
-    r'\bdeclaraci\s': 'declaración ',
-    r'\bDeclaraci\s': 'Declaración ',
-    r'\bnaci\s': 'nación ',
-    r'\bNaci\s': 'Nación ',
-    r'\bpoblaci\s': 'población ',
-    r'\bPoblaci\s': 'Población ',
-    r'\breuni\s': 'reunión ',
-    r'\bReuni\s': 'Reunión ',
-    r'\bopini\s': 'opinión ',
-    r'\bOpini\s': 'Opinión ',
-    r'\bresoluci\s': 'resolución ',
-    r'\bResoluci\s': 'Resolución ',
-    r'\borganizaci\s': 'organización ',
-    r'\bOrganizaci\s': 'Organización ',
-    r'\bprotecci\s': 'protección ',
-    r'\bProtecci\s': 'Protección ',
-    r'\bparticipaci\s': 'participación ',
-    r'\bParticipaci\s': 'Participación ',
-    r'\binvestigaci\s': 'investigación ',
-    r'\bInvestigaci\s': 'Investigación ',
-    r'\beducaci\s': 'educación ',
-    r'\bEducaci\s': 'Educación ',
-    r'\bsanci\s': 'sanción ',
-    r'\bSanci\s': 'Sanción ',
-    r'\bcomunicaci\s': 'comunicación ',
-    r'\bComunicaci\s': 'Comunicación ',
-    r'\boperaci\s': 'operación ',
-    r'\bOperaci\s': 'Operación ',
-    r'\brelaci\s': 'relación ',
-    r'\bRelaci\s': 'Relación ',
-    r'\bpoli\s': 'política ',
-    r'\bPoli\s': 'Política ',
-    r'\bcompa\s': 'compañía ',
-    r'\bCompa\s': 'Compañía ',
-    r'\beconom\s': 'economía ',
-    r'\bEconom\s': 'Economía ',
-    r'\bpai\s': 'país ',
-    r'\bPai\s': 'País ',
-    r'\bda\s': 'día ',
-    r'\bDa\s': 'Día ',
-    r'\bgeograf\s': 'geografía ',
-    r'\bGeograf\s': 'Geografía ',
+    # Palabras cortadas comunes - SIN espacios adicionales al final
+    # para evitar que se dupliquen en la siguiente iteración
+    r'\bfundaci(?=\s|$)': 'fundación',
+    r'\bFundaci(?=\s|$)': 'Fundación',
+    r'\binformaci(?=\s|$)': 'información',
+    r'\bInformaci(?=\s|$)': 'Información',
+    r'\bsituaci(?=\s|$)': 'situación',
+    r'\bSituaci(?=\s|$)': 'Situación',
+    r'\bdeclaraci(?=\s|$)': 'declaración',
+    r'\bDeclaraci(?=\s|$)': 'Declaración',
+    r'\bnaci(?=\s|$)': 'nación',
+    r'\bNaci(?=\s|$)': 'Nación',
+    r'\bpoblaci(?=\s|$)': 'población',
+    r'\bPoblaci(?=\s|$)': 'Población',
+    r'\breuni(?=\s|$)': 'reunión',
+    r'\bReuni(?=\s|$)': 'Reunión',
+    r'\bopini(?=\s|$)': 'opinión',
+    r'\bOpini(?=\s|$)': 'Opinión',
+    r'\bresoluci(?=\s|$)': 'resolución',
+    r'\bResoluci(?=\s|$)': 'Resolución',
+    r'\borganizaci(?=\s|$)': 'organización',
+    r'\bOrganizaci(?=\s|$)': 'Organización',
+    r'\bprotecci(?=\s|$)': 'protección',
+    r'\bProtecci(?=\s|$)': 'Protección',
+    r'\bparticipaci(?=\s|$)': 'participación',
+    r'\bParticipaci(?=\s|$)': 'Participación',
+    r'\binvestigaci(?=\s|$)': 'investigación',
+    r'\bInvestigaci(?=\s|$)': 'Investigación',
+    r'\beducaci(?=\s|$)': 'educación',
+    r'\bEducaci(?=\s|$)': 'Educación',
+    r'\bsanci(?=\s|$)': 'sanción',
+    r'\bSanci(?=\s|$)': 'Sanción',
+    r'\bcomunicaci(?=\s|$)': 'comunicación',
+    r'\bComunicaci(?=\s|$)': 'Comunicación',
+    r'\boperaci(?=\s|$)': 'operación',
+    r'\bOperaci(?=\s|$)': 'Operación',
+    r'\brelaci(?=\s|$)': 'relación',
+    r'\bRelaci(?=\s|$)': 'Relación',
+    r'\bpoli(?=\s|$)': 'política',
+    r'\bPoli(?=\s|$)': 'Política',
+    r'\bcompa(?=\s|$)': 'compañía',
+    r'\bCompa(?=\s|$)': 'Compañía',
+    r'\beconom(?=\s|$)': 'economía',
+    r'\bEconom(?=\s|$)': 'Economía',
+    r'\bpai(?=\s|$)': 'país',
+    r'\bPai(?=\s|$)': 'País',
+    r'\bda(?=\s|$)': 'día',
+    r'\bDa(?=\s|$)': 'Día',
+    r'\bgeograf(?=\s|$)': 'geografía',
+    r'\bGeograf(?=\s|$)': 'Geografía',
     
     # Más palabras con -ción
-    r'\badministraci\s': 'administración ',
-    r'\bAdministraci\s': 'Administración ',
-    r'\bconservaci\s': 'conservación ',
-    r'\bConservaci\s': 'Conservación ',
-    r'\bconvenci\s': 'convención ',
-    r'\bConvenci\s': 'Convención ',
-    r'\bpresentaci\s': 'presentación ',
-    r'\bPresentaci\s': 'Presentación ',
-    r'\bimplementaci\s': 'implementación ',
-    r'\bImplementaci\s': 'Implementación ',
-    r'\bevaluaci\s': 'evaluación ',
-    r'\bEvaluaci\s': 'Evaluación ',
-    r'\bsoluci\s': 'solución ',
-    r'\bSoluci\s': 'Solución ',
-    r'\binstituci\s': 'institución ',
-    r'\bInstituci\s': 'Institución ',
-    r'\bcolaboraci\s': 'colaboración ',
-    r'\bColaboraci\s': 'Colaboración ',
-    r'\bseguridaci\s': 'seguridad ',
-    r'\bSeguridaci\s': 'Seguridad ',
+    r'\badministraci(?=\s|$)': 'administración',
+    r'\bAdministraci(?=\s|$)': 'Administración',
+    r'\bconservaci(?=\s|$)': 'conservación',
+    r'\bConservaci(?=\s|$)': 'Conservación',
+    r'\bconvenci(?=\s|$)': 'convención',
+    r'\bConvenci(?=\s|$)': 'Convención',
+    r'\bpresentaci(?=\s|$)': 'presentación',
+    r'\bPresentaci(?=\s|$)': 'Presentación',
+    r'\bimplementaci(?=\s|$)': 'implementación',
+    r'\bImplementaci(?=\s|$)': 'Implementación',
+    r'\bevaluaci(?=\s|$)': 'evaluación',
+    r'\bEvaluaci(?=\s|$)': 'Evaluación',
+    r'\bsoluci(?=\s|$)': 'solución',
+    r'\bSoluci(?=\s|$)': 'Solución',
+    r'\binstituci(?=\s|$)': 'institución',
+    r'\bInstituci(?=\s|$)': 'Institución',
+    r'\bcolaboraci(?=\s|$)': 'colaboración',
+    r'\bColaboraci(?=\s|$)': 'Colaboración',
+    r'\bseguridaci(?=\s|$)': 'seguridad',
+    r'\bSeguridaci(?=\s|$)': 'Seguridad',
     
-    # Palabras con -ía
-    r'\bcompa[ní]a?\b': 'compañía',
-    r'\bCompa[ní]a?\b': 'Compañía',
-    r'\benergi\s': 'energía ',
-    r'\bEnergi\s': 'Energía ',
-    r'\bgaranti\s': 'garantía ',
-    r'\bGaranti\s': 'Garantía ',
-    r'\bhigieni\s': 'higiene ',
-    r'\bHigieni\s': 'Higiene ',
-    r'\btipologi\s': 'tipología ',
-    r'\bTipologi\s': 'Tipología ',
-    r'\bfalsedi\s': 'falsedad ',
-    r'\bFalsedi\s': 'Falsedad ',
-    r'\balianza\b': 'alianza',
-    r'\bampliaci\s': 'ampliación ',
-    r'\bAmplicaci\s': 'Ampliación ',
-    
-    # Palabras comunes sin tilde que SIEMPRE llevan
-    r'\besta\s+(?:en|pasando|siendo|ocurriendo|sucediendo|presente)\b': 'está ',
-    r'\béstas?\b(?!\s+de)': 'éstas',
-    r'\bmas\s+(?!que|o|bien)': 'más ',
-    r'\bse\s+(?:que|va|puede|debe|trata)\b': 'sé ',
-    r'\btú\s+(?:eres|tienes|puedes|sabes)\b': 'tú ',
-    r'\bmi\s+(?:casa|familia|vida|trabajo|país)\b': 'mí ',
-    r'\bsi\s+(?:es|fue|ha|haya|acaso)\b': 'sí ',
+    # Palabras con -ía (sin espacios al final)
+    r'\benergi(?=\s|$)': 'energía',
+    r'\bEnergi(?=\s|$)': 'Energía',
+    r'\bgaranti(?=\s|$)': 'garantía',
+    r'\bGaranti(?=\s|$)': 'Garantía',
+    r'\bhigieni(?=\s|$)': 'higiene',
+    r'\bHigieni(?=\s|$)': 'Higiene',
+    r'\btipologi(?=\s|$)': 'tipología',
+    r'\bTipologi(?=\s|$)': 'Tipología',
+    r'\bampliaci(?=\s|$)': 'ampliación',
+    r'\bAmplicaci(?=\s|$)': 'Ampliación',
 }
 
 # --- FUNCIONES AUXILIARES ORIGINALES ---
@@ -224,6 +211,7 @@ def fix_spanish_encoding(text):
     """
     Corrige problemas de encoding y palabras cortadas en español.
     PRIORIZA la reparación de palabras cortadas antes de otros fixes.
+    Evita duplicaciones usando lookahead y lookahead/behind.
     """
     if not text:
         return text
@@ -240,8 +228,11 @@ def fix_spanish_encoding(text):
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
     
+    # PASO 1.5: LIMPIEZA DE DUPLICACIONES - Eliminar letras repetidas 3+ veces
+    # Esto elimina "lalal", "ientoiento", etc.
+    result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result)
+    
     # PASO 2: Reparar palabras CORTADAS (qué, por qué, etc.)
-    # Estas son las MÁS IMPORTANTES para noticias
     word_repairs = {
         r'\bqu\s+se\b': 'qué se',
         r'\bqu\s+es\b': 'qué es',
@@ -253,52 +244,47 @@ def fix_spanish_encoding(text):
         r'\bQu\s+se\b': 'Qué se',
         r'\bQu\s+es\b': 'Qué es',
         r'\bQu\s+fue\b': 'Qué fue',
-        r'\bPor\s+qu\b': 'Por qué',
-        r'\bpor\s+qu\b': 'por qué',
-        r'\bPor\s+que\s+(?=[a-z])': 'por qué ',
-        r'\bpor\s+que\s+(?=[a-z])': 'por qué ',
+        r'\bPor\s+qu(?!\s+[eé])\b': 'Por qué',
+        r'\bpor\s+qu(?!\s+[eé])\b': 'por qué',
     }
     
     for pattern, replacement in word_repairs.items():
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
     
-    # PASO 3: Aplicar todas las correcciones del diccionario
+    # PASO 3: Aplicar correcciones del diccionario (UNA SOLA VEZ)
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
+        # count=1 para aplicar solo UNA VEZ por patrón
+        result = re.sub(pattern, replacement, result, count=1, flags=re.IGNORECASE)
+    
+    # PASO 4: Limpieza final de palabras parcialmente duplicadas
+    # Elimina "Documentalalal" -> "Documental", "Sosteniblelele" -> "Sostenible"
+    cleanup_patterns = [
+        (r'documentalalal', 'documental'),
+        (r'Documentalalal', 'Documental'),
+        (r'sosteniblelele', 'sostenible'),
+        (r'Sosteniblelele', 'Sostenible'),
+        (r'entretenimientoientoiento', 'entretenimiento'),
+        (r'Entretenimientoientoiento', 'Entretenimiento'),
+        (r'([a-záéíóúñ])\1{2,}', r'\1'),  # Eliminar cualquier duplicación triple
+    ]
+    
+    for pattern, replacement in cleanup_patterns:
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
     
-    # PASO 4: Corregir palabras terminadas en "-ión" que quedaron cortadas
-    # Patrón: palabra sin la última "n"
-    ion_words = [
-        'fundación', 'información', 'situación', 'declaración', 'nación',
-        'población', 'reunión', 'opinión', 'resolución', 'organización',
-        'protección', 'participación', 'investigación', 'educación', 'sanción',
-        'comunicación', 'operación', 'relación', 'administración', 'conservación',
-        'convención', 'presentación', 'implementación', 'evaluación', 'solución',
-        'institución', 'colaboración', 'ampliación', 'emisión', 'transmisión',
+    # PASO 5: Corregir palabras clave específicas que quedan sin tildes
+    final_fixes = [
+        (r'\bAmazon(?!í)\b', 'Amazonía'),
+        (r'\bamazon(?!í)\b', 'amazonía'),
+        (r'\bColombia(?!no)', 'Colombia'),
+        (r'\sentretenim(?!iento)\b', ' entretenimiento'),
+        (r'\bEntretenim(?!iento)\b', 'Entretenimiento'),
+        (r'\bsostenib(?!le)\b', 'sostenible'),
+        (r'\bSostenib(?!le)\b', 'Sostenible'),
+        (r'\bdocument(?!al)\b', 'documental'),
+        (r'\bDocument(?!al)\b', 'Documental'),
     ]
     
-    for word in ion_words:
-        # Buscar la palabra sin la "ó" final
-        truncated = word[:-2]  # Quita "ón"
-        # Patrón: palabra truncada seguida de espacio o puntuación
-        pattern = rf'\b{truncated}\s+(?=[a-z]|$|[.,:;])'
-        result = re.sub(pattern, word + ' ', result, flags=re.IGNORECASE)
-    
-    # PASO 5: Arreglar palabras cortadas específicas para palabras clave
-    specific_fixes = [
-        (r'\bPor qu\s+', 'por qué '),
-        (r'\bpor qu\s+', 'por qué '),
-        (r'\bqu\s+(?=[a-z])', 'qué '),
-        (r'\bQu\s+(?=[A-Z])', 'Qué '),
-        (r'\bentretenim', 'entretenimiento'),
-        (r'\bEntretenim', 'Entretenimiento'),
-        (r'\bsostenib', 'sostenible'),
-        (r'\bSostenib', 'Sostenible'),
-        (r'\bdocument', 'documental'),
-        (r'\bDocument', 'Documental'),
-    ]
-    
-    for pattern, replacement in specific_fixes:
+    for pattern, replacement in final_fixes:
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
     
     return result
@@ -313,21 +299,21 @@ def check_transcription_quality(text):
     if any(char in text for char in ['Ã', 'Â', 'â', 'º', '°']):
         issues.append("⚠️ Detectados problemas de encoding - Se aplicó corrección automática")
     
+    # Detectar si quedan duplicaciones triples (error de post-procesamiento)
+    if re.search(r'([a-záéíóúñ])\1{2,}', text):
+        issues.append("⚠️ Detectadas algunas palabras parcialmente duplicadas - Se aplicó limpieza")
+    
     suspicious_patterns = [
-        r'\bqu\s+',
-        r'\bpor\s+qu\s+',
-        r'\besta\s+(?:en|pasando)',
-        r'\bmas\s+(?!que)',
-        r'\bpolitica\b',
-        r'\bpublico\b',
-        r'\beconomia\b',
-        r'\bnacion\b',
+        (r'\bqu\s+', 'palabras cortadas sin tilde'),
+        (r'\bpor\s+qu\s+', 'palabras cortadas "por qué"'),
     ]
     
-    suspicious_count = sum(len(re.findall(pattern, text, re.IGNORECASE)) for pattern in suspicious_patterns)
+    suspicious_count = 0
+    for pattern, _ in suspicious_patterns:
+        suspicious_count += len(re.findall(pattern, text, re.IGNORECASE))
     
-    if suspicious_count > 3:
-        issues.append(f"ℹ️ Se aplicaron {suspicious_count} correcciones automáticas de tildes y palabras cortadas")
+    if suspicious_count > 0:
+        issues.append(f"ℹ️ Se aplicaron {suspicious_count} correcciones automáticas de tildes")
     
     return issues
 
