@@ -62,12 +62,13 @@ except KeyError:
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS (SIN DUPLICACIÓN) ---
-# IMPORTANTE: Los patrones aquí son más restrictivos para evitar duplicaciones
+# --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS (AMPLIADO) ---
 
 SPANISH_WORD_CORRECTIONS = {
-    # Palabras terminadas en -ción (MUY COMÚN EN NOTICIAS)
-    # Usar lookahead para evitar duplicar palabras ya corregidas
+    # Corrección de "Sí" confundido con "S"
+    r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
+    
+    # Preguntas comunes
     r'\bqu\s+se\b': 'qué se',
     r'\bqu\s+es\b': 'qué es',
     r'\bqu\s+fue\b': 'qué fue',
@@ -77,98 +78,42 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bPor\s+qu(?!\s+[eé])\b': 'Por qué',
     r'\bpor\s+qu(?!\s+[eé])\b': 'por qué',
     
-    # Palabras cortadas comunes - SIN espacios adicionales al final
-    # para evitar que se dupliquen en la siguiente iteración
-    r'\bfundaci(?=\s|$)': 'fundación',
-    r'\bFundaci(?=\s|$)': 'Fundación',
-    r'\binformaci(?=\s|$)': 'información',
-    r'\bInformaci(?=\s|$)': 'Información',
-    r'\bsituaci(?=\s|$)': 'situación',
-    r'\bSituaci(?=\s|$)': 'Situación',
-    r'\bdeclaraci(?=\s|$)': 'declaración',
-    r'\bDeclaraci(?=\s|$)': 'Declaración',
-    r'\bnaci(?=\s|$)': 'nación',
-    r'\bNaci(?=\s|$)': 'Nación',
-    r'\bpoblaci(?=\s|$)': 'población',
-    r'\bPoblaci(?=\s|$)': 'Población',
-    r'\breuni(?=\s|$)': 'reunión',
-    r'\bReuni(?=\s|$)': 'Reunión',
-    r'\bopini(?=\s|$)': 'opinión',
-    r'\bOpini(?=\s|$)': 'Opinión',
-    r'\bresoluci(?=\s|$)': 'resolución',
-    r'\bResoluci(?=\s|$)': 'Resolución',
-    r'\borganizaci(?=\s|$)': 'organización',
-    r'\bOrganizaci(?=\s|$)': 'Organización',
-    r'\bprotecci(?=\s|$)': 'protección',
-    r'\bProtecci(?=\s|$)': 'Protección',
-    r'\bparticipaci(?=\s|$)': 'participación',
-    r'\bParticipaci(?=\s|$)': 'Participación',
-    r'\binvestigaci(?=\s|$)': 'investigación',
-    r'\bInvestigaci(?=\s|$)': 'Investigación',
-    r'\beducaci(?=\s|$)': 'educación',
-    r'\bEducaci(?=\s|$)': 'Educación',
-    r'\bsanci(?=\s|$)': 'sanción',
-    r'\bSanci(?=\s|$)': 'Sanción',
-    r'\bcomunicaci(?=\s|$)': 'comunicación',
-    r'\bComunicaci(?=\s|$)': 'Comunicación',
-    r'\boperaci(?=\s|$)': 'operación',
-    r'\bOperaci(?=\s|$)': 'Operación',
-    r'\brelaci(?=\s|$)': 'relación',
-    r'\bRelaci(?=\s|$)': 'Relación',
-    r'\bpoli(?=\s|$)': 'política',
-    r'\bPoli(?=\s|$)': 'Política',
-    r'\bcompa(?=\s|$)': 'compañía',
-    r'\bCompa(?=\s|$)': 'Compañía',
-    r'\beconom(?=\s|$)': 'economía',
-    r'\bEconom(?=\s|$)': 'Economía',
-    r'\bpai(?=\s|$)': 'país',
-    r'\bPai(?=\s|$)': 'País',
-    r'\bda(?=\s|$)': 'día',
-    r'\bDa(?=\s|$)': 'Día',
-    r'\bgeograf(?=\s|$)': 'geografía',
-    r'\bGeograf(?=\s|$)': 'Geografía',
+    # Palabras comunes cortadas (con lookahead para evitar sobre-corrección)
+    r'\bfundaci(?=\s|$)': 'fundación', 'Fundaci(?=\s|$)': 'Fundación',
+    r'\binformaci(?=\s|$)': 'información', 'Informaci(?=\s|$)': 'Información',
+    r'\bsituaci(?=\s|$)': 'situación', 'Situaci(?=\s|$)': 'Situación',
+    r'\bdeclaraci(?=\s|$)': 'declaración', 'Declaraci(?=\s|$)': 'Declaración',
+    r'\bnaci(?=\s|$)': 'nación', 'Naci(?=\s|$)': 'Nación',
+    r'\bpoblaci(?=\s|$)': 'población', 'Poblaci(?=\s|$)': 'Población',
+    r'\breuni(?=\s|$)': 'reunión', 'Reuni(?=\s|$)': 'Reunión',
+    r'\bopini(?=\s|$)': 'opinión', 'Opini(?=\s|$)': 'Opinión',
+    r'\bresoluci(?=\s|$)': 'resolución', 'Resoluci(?=\s|$)': 'Resolución',
+    r'\borganizaci(?=\s|$)': 'organización', 'Organizaci(?=\s|$)': 'Organización',
+    r'\bprotecci(?=\s|$)': 'protección', 'Protecci(?=\s|$)': 'Protección',
+    r'\bparticipaci(?=\s|$)': 'participación', 'Participaci(?=\s|$)': 'Participación',
+    r'\binvestigaci(?=\s|$)': 'investigación', 'Investigaci(?=\s|$)': 'Investigación',
+    r'\beducaci(?=\s|$)': 'educación', 'Educaci(?=\s|$)': 'Educación',
+    r'\bsanci(?=\s|$)': 'sanción', 'Sanci(?=\s|$)': 'Sanción',
+    r'\bcomunicaci(?=\s|$)': 'comunicación', 'Comunicaci(?=\s|$)': 'Comunicación',
+    r'\boperaci(?=\s|$)': 'operación', 'Operaci(?=\s|$)': 'Operación',
+    r'\brelaci(?=\s|$)': 'relación', 'Relaci(?=\s|$)': 'Relación',
+    r'\badministraci(?=\s|$)': 'administración', 'Administraci(?=\s|$)': 'Administración',
+    r'\bimplementaci(?=\s|$)': 'implementación', 'Implementaci(?=\s|$)': 'Implementación',
     
-    # Más palabras con -ción
-    r'\badministraci(?=\s|$)': 'administración',
-    r'\bAdministraci(?=\s|$)': 'Administración',
-    r'\bconservaci(?=\s|$)': 'conservación',
-    r'\bConservaci(?=\s|$)': 'Conservación',
-    r'\bconvenci(?=\s|$)': 'convención',
-    r'\bConvenci(?=\s|$)': 'Convención',
-    r'\bpresentaci(?=\s|$)': 'presentación',
-    r'\bPresentaci(?=\s|$)': 'Presentación',
-    r'\bimplementaci(?=\s|$)': 'implementación',
-    r'\bImplementaci(?=\s|$)': 'Implementación',
-    r'\bevaluaci(?=\s|$)': 'evaluación',
-    r'\bEvaluaci(?=\s|$)': 'Evaluación',
-    r'\bsoluci(?=\s|$)': 'solución',
-    r'\bSoluci(?=\s|$)': 'Solución',
-    r'\binstituci(?=\s|$)': 'institución',
-    r'\bInstituci(?=\s|$)': 'Institución',
-    r'\bcolaboraci(?=\s|$)': 'colaboración',
-    r'\bColaboraci(?=\s|$)': 'Colaboración',
-    r'\bseguridaci(?=\s|$)': 'seguridad',
-    r'\bSeguridaci(?=\s|$)': 'Seguridad',
+    # Palabras terminadas en -ía
+    r'\bpoli(?=\s|$)': 'política', 'Poli(?=\s|$)': 'Política',
+    r'\bcompa(?=\s|$)': 'compañía', 'Compa(?=\s|$)': 'Compañía',
+    r'\beconom(?=\s|$)': 'economía', 'Econom(?=\s|$)': 'Economía',
+    r'\benergi(?=\s|$)': 'energía', 'Energi(?=\s|$)': 'Energía',
+    r'\bgeograf(?=\s|$)': 'geografía', 'Geograf(?=\s|$)': 'Geografía',
     
-    # Palabras con -ía (sin espacios al final)
-    r'\benergi(?=\s|$)': 'energía',
-    r'\bEnergi(?=\s|$)': 'Energía',
-    r'\bgaranti(?=\s|$)': 'garantía',
-    r'\bGaranti(?=\s|$)': 'Garantía',
-    r'\bhigieni(?=\s|$)': 'higiene',
-    r'\bHigieni(?=\s|$)': 'Higiene',
-    r'\btipologi(?=\s|$)': 'tipología',
-    r'\bTipologi(?=\s|$)': 'Tipología',
-    r'\bampliaci(?=\s|$)': 'ampliación',
-    r'\bAmplicaci(?=\s|$)': 'Ampliación',
-    
-    # Correcciones para palabras con tilde en i, como "sí"
-    r'\bsi\b': 'sí',
-    r'\bSi\b': 'Sí',
-    r'\bmi\b': 'mí',
-    r'\bMi\b': 'Mí',
-    r'\bti\b': 'tí',
-    r'\bTi\b': 'Tí',
+    # Otras palabras comunes
+    r'\bpai(?=\s|$)': 'país', 'Pai(?=\s|$)': 'País',
+    r'\bda(?=\s|$)': 'día', 'Da(?=\s|$)': 'Día',
+    r'\bmiérco(?=\s|$)': 'miércoles', 'Miérco(?=\s|$)': 'Miércoles',
+    r'\bdocument(?=\s|$)': 'documental', 'Document(?=\s|$)': 'Documental',
+    r'\bsostenib(?=\s|$)': 'sostenible', 'Sostenib(?=\s|$)': 'Sostenible',
+    r'\bEntretenim(?=\s|$)': 'Entretenimiento', 'entretenim(?=\s|$)': 'entretenimiento',
 }
 
 # --- FUNCIONES AUXILIARES ORIGINALES ---
@@ -216,251 +161,161 @@ def format_transcription_with_timestamps(data):
 # --- FUNCIÓN MEJORADA: POST-PROCESAMIENTO PARA TILDES Y PALABRAS CORTADAS ---
 
 def fix_spanish_encoding(text):
-    """
-    Corrige problemas de encoding y palabras cortadas en español.
-    PRIORIZA la reparación de palabras cortadas antes de otros fixes.
-    Evita duplicaciones usando lookahead y lookahead/behind.
-    """
     if not text:
         return text
     
     result = text
     
-    # PASO 1: Corregir problemas de encoding UTF-8
-    encoding_fixes = {
-        'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú',
-        'Ã±': 'ñ', 'Ã': 'Ñ',
-        'Â¿': '¿', 'Â¡': '¡',
-    }
-    
+    # PASO 1: Corregir problemas de encoding UTF-8 (si los hubiera)
+    encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
-    
-    # PASO 1.5: LIMPIEZA DE DUPLICACIONES - Eliminar letras repetidas 3+ veces
-    # Esto elimina "lalal", "ientoiento", etc.
-    result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result)
-    
-    # PASO 2: Reparar palabras CORTADAS (qué, por qué, etc.)
-    word_repairs = {
-        r'\bqu\s+se\b': 'qué se',
-        r'\bqu\s+es\b': 'qué es',
-        r'\bqu\s+fue\b': 'qué fue',
-        r'\bqu\s+hay\b': 'qué hay',
-        r'\bqu\s+significa\b': 'qué significa',
-        r'\bqu\s+pasa\b': 'qué pasa',
-        r'\bqu\s+tal\b': 'qué tal',
-        r'\bQu\s+se\b': 'Qué se',
-        r'\bQu\s+es\b': 'Qué es',
-        r'\bQu\s+fue\b': 'Qué fue',
-        r'\bPor\s+qu(?!\s+[eé])\b': 'Por qué',
-        r'\bpor\s+qu(?!\s+[eé])\b': 'por qué',
-    }
-    
-    for pattern, replacement in word_repairs.items():
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-    
-    # PASO 3: Aplicar correcciones del diccionario (A TODAS LAS OCURRENCIAS)
+
+    # PASO 2: Aplicar todas las correcciones del diccionario
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+        result = re.sub(pattern, replacement, result)
+
+    # PASO 3: Limpieza de artefactos y duplicaciones comunes
+    result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result, flags=re.IGNORECASE)
     
-    # PASO 4: Limpieza final de palabras parcialmente duplicadas
-    # Elimina "Documentalalal" -> "Documental", "Sosteniblelele" -> "Sostenible"
-    cleanup_patterns = [
-        (r'documentalalal', 'documental'),
-        (r'Documentalalal', 'Documental'),
-        (r'sosteniblelele', 'sostenible'),
-        (r'Sosteniblelele', 'Sostenible'),
-        (r'entretenimientoientoiento', 'entretenimiento'),
-        (r'Entretenimientoientoiento', 'Entretenimiento'),
-        (r'([a-záéíóúñ])\1{2,}', r'\1'),  # Eliminar cualquier duplicación triple
-    ]
-    
-    for pattern, replacement in cleanup_patterns:
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-    
-    # PASO 5: Corregir palabras clave específicas que quedan sin tildes
-    final_fixes = [
-        (r'\bAmazon(?!í)\b', 'Amazonía'),
-        (r'\bamazon(?!í)\b', 'amazonía'),
-        (r'\bColombia(?!no)', 'Colombia'),
-        (r'\sentretenim(?!iento)\b', ' entretenimiento'),
-        (r'\bEntretenim(?!iento)\b', 'Entretenimiento'),
-        (r'\bsostenib(?!le)\b', 'sostenible'),
-        (r'\bSostenib(?!le)\b', 'Sostenible'),
-        (r'\bdocument(?!al)\b', 'documental'),
-        (r'\bDocument(?!al)\b', 'Documental'),
-    ]
-    
-    for pattern, replacement in final_fixes:
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-    
-    # PASO ADICIONAL: Corregir "si" a "sí" en contextos afirmativos
-    # Esto es aproximado: cambiamos "si" independiente si no es seguido de palabras que indican condicional
-    result = re.sub(r'\bsi(?!\s+(no|pero|que|de|la|el|en|un|una|por|con|para|como|desde|hasta|antes|después|sobre|entre|tras|durante|sin))\b', 'sí', result, flags=re.IGNORECASE)
-    result = re.sub(r'\bSi(?!\s+(no|pero|que|de|la|el|en|un|una|por|con|para|como|desde|hasta|antes|después|sobre|entre|tras|durante|sin))\b', 'Sí', result, flags=re.IGNORECASE)
-    
-    return result
+    # PASO 4: Corrección de mayúsculas al inicio de la frase después de un punto.
+    result = re.sub(r'(?<=\.\s)([a-z])', lambda m: m.group(1).upper(), result)
+
+    return result.strip()
 
 def check_transcription_quality(text):
-    """Detecta posibles problemas de encoding o tildes faltantes"""
     if not text:
         return []
-    
     issues = []
-    
-    if any(char in text for char in ['Ã', 'Â', 'â', 'º', '°']):
-        issues.append("⚠️ Detectados problemas de encoding - Se aplicó corrección automática")
-    
-    # Detectar si quedan duplicaciones triples (error de post-procesamiento)
-    if re.search(r'([a-záéíóúñ])\1{2,}', text):
-        issues.append("⚠️ Detectadas algunas palabras parcialmente duplicadas - Se aplicó limpieza")
-    
-    suspicious_patterns = [
-        (r'\bqu\s+', 'palabras cortadas sin tilde'),
-        (r'\bpor\s+qu\s+', 'palabras cortadas "por qué"'),
-    ]
-    
-    suspicious_count = 0
-    for pattern, _ in suspicious_patterns:
-        suspicious_count += len(re.findall(pattern, text, re.IGNORECASE))
-    
-    if suspicious_count > 0:
-        issues.append(f"ℹ️ Se aplicaron {suspicious_count} correcciones automáticas de tildes")
-    
+    if any(char in text for char in ['Ã', 'Â']):
+        issues.append("⚠️ Detectados problemas de encoding - Se aplicó corrección automática.")
+    if re.search(r'\b(qu|sostenib|fundaci|informaci)\s', text, re.IGNORECASE):
+        issues.append("ℹ️ Se aplicaron correcciones automáticas de tildes y palabras cortadas.")
     return issues
 
 # --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
 
 def convert_video_to_audio(video_bytes, video_filename):
-    """Convierte video (MP4) a audio (MP3) con compresión"""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(video_filename)[1]) as tmp_video:
             tmp_video.write(video_bytes)
             video_path = tmp_video.name
-        
         audio_path = video_path.rsplit('.', 1)[0] + '_audio.mp3'
-        
         video = VideoFileClip(video_path)
-        video.audio.write_audiofile(
-            audio_path,
-            codec='mp3',
-            bitrate='128k',
-            verbose=False,
-            logger=None
-        )
+        video.audio.write_audiofile(audio_path, codec='mp3', bitrate='128k', verbose=False, logger=None)
         video.close()
-        
         with open(audio_path, 'rb') as f:
             audio_bytes = f.read()
-        
         os.unlink(video_path)
         os.unlink(audio_path)
-        
         return audio_bytes, True
-    except Exception as e:
+    except Exception:
         return video_bytes, False
 
 def compress_audio(audio_bytes, original_filename):
-    """Comprime audio reduciendo bitrate"""
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(original_filename)[1]) as tmp_audio:
             tmp_audio.write(audio_bytes)
             audio_path = tmp_audio.name
-        
         compressed_path = audio_path.rsplit('.', 1)[0] + '_compressed.mp3'
-        
         audio = AudioFileClip(audio_path)
-        audio.write_audiofile(
-            compressed_path,
-            codec='mp3',
-            bitrate='96k',
-            verbose=False,
-            logger=None
-        )
+        audio.write_audiofile(compressed_path, codec='mp3', bitrate='96k', verbose=False, logger=None)
         audio.close()
-        
         with open(compressed_path, 'rb') as f:
             compressed_bytes = f.read()
-        
         os.unlink(audio_path)
         os.unlink(compressed_path)
-        
         return compressed_bytes
-    except Exception as e:
+    except Exception:
         return audio_bytes
 
 def get_file_size_mb(file_bytes):
-    """Calcula el tamaño del archivo en MB"""
     return len(file_bytes) / (1024 * 1024)
 
 # --- FUNCIONES DE ANÁLISIS ---
 
 def generate_summary(transcription_text, client):
-    """Genera un resumen inteligente usando Groq LLaMA"""
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {
-                    "role": "system",
-                    "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes en formato de párrafo corrido, profesionales y concisos. IMPORTANTE: Mantén todas las tildes y acentos correctos en español."
-                },
-                {
-                    "role": "user",
-                    "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) sobre el siguiente contenido. No uses bullet points, no uses listas numeradas, no uses introducciones como 'A continuación' o 'El resumen es'. Ve directo al contenido. Mantén todas las tildes correctas:\n\n{transcription_text}"
-                }
+                {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
+                {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto. Ve directo al contenido, sin introducciones. Mantén todas las tildes correctas:\n\n{transcription_text}"}
             ],
-            model="llama-3.3-70b-versatile",
-            temperature=0.3,
-            max_tokens=500
+            model="llama-3.3-70b-versatile", temperature=0.3, max_tokens=500
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Error al generar resumen: {str(e)}"
 
 def extract_quotes(segments):
-    """Identifica citas textuales y declaraciones importantes"""
     quotes = []
-    quote_keywords = ['dijo', 'afirmó', 'declaró', 'señaló', 'expresó', 'manifestó', 
-                      'indicó', 'comentó', 'aseguró', 'confirmó', 'negó', 'advirtió',
-                      'explicó', 'destacó', 'subrayó', 'recalcó', 'sostuvo']
-    
+    quote_keywords = ['dijo', 'afirmó', 'declaró', 'señaló', 'expresó', 'manifestó', 'indicó', 'comentó', 'aseguró']
     for i, seg in enumerate(segments):
         text = seg['text'].strip()
         text_lower = text.lower()
-        
         has_quotes = '"' in text or '«' in text or '»' in text
         has_declaration = any(keyword in text_lower for keyword in quote_keywords)
-        
         if has_quotes or has_declaration:
-            context_before = ""
-            context_after = ""
-            
-            if i > 0:
-                context_before = segments[i-1]['text'].strip()
-            if i < len(segments) - 1:
-                context_after = segments[i+1]['text'].strip()
-            
+            context_before = segments[i-1]['text'].strip() if i > 0 else ""
+            context_after = segments[i+1]['text'].strip() if i < len(segments) - 1 else ""
             full_context = f"{context_before} {text} {context_after}".strip()
-            
-            quotes.append({
-                'time': format_timestamp(seg['start']),
-                'text': text,
-                'full_context': full_context,
-                'start': seg['start'],
-                'type': 'quote' if has_quotes else 'declaration'
-            })
-    
+            quotes.append({'time': format_timestamp(seg['start']), 'text': text, 'full_context': full_context, 'start': seg['start'], 'type': 'quote' if has_quotes else 'declaration'})
     quotes.sort(key=lambda x: (x['type'] == 'quote', len(x['text'])), reverse=True)
     return quotes[:10]
 
+def extract_people_and_roles(transcription_text, client):
+    """Extrae nombres de personas y sus cargos usando Groq LLaMA."""
+    try:
+        chat_completion = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": """Eres un analista experto en transcripciones de noticias. Tu tarea es identificar a todas las personas mencionadas por su nombre y, si se especifica, su cargo o rol. Debes devolver la información en formato JSON.
+                    El JSON debe ser una lista de objetos. Cada objeto debe tener tres claves: "name", "role" y "context".
+                    - "name": El nombre completo de la persona.
+                    - "role": El cargo o rol asociado (ej: "Presidente", "Director de la Fundación", "Analista"). Si no se menciona un rol, usa el valor "No especificado".
+                    - "context": La frase exacta de la transcripción donde se menciona a la persona y su rol.
+                    Asegúrate de que el JSON esté bien formado."""
+                },
+                {
+                    "role": "user",
+                    "content": f"""Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:
+
+                    {transcription_text}
+                    """
+                }
+            ],
+            model="llama-3.3-70b-versatile",
+            temperature=0.1,
+            max_tokens=1024,
+            response_format={"type": "json_object"}
+        )
+        # El modelo puede devolver un JSON con una clave principal, por ejemplo, "people".
+        # Debemos manejar esto de forma robusta.
+        response_content = chat_completion.choices[0].message.content
+        data = json.loads(response_content)
+        
+        # Buscar la lista de personas, sin importar la clave principal
+        for key in data:
+            if isinstance(data[key], list):
+                return data[key]
+        return [] # Si no encuentra una lista, devuelve una lista vacía
+
+    except json.JSONDecodeError:
+        return [{"name": "Error de Análisis", "role": "No se pudo procesar la respuesta de la IA", "context": "El modelo no devolvió un JSON válido."}]
+    except Exception as e:
+        return [{"name": "Error de API", "role": str(e), "context": "Ocurrió un error al contactar con el servicio de análisis."}]
+
+
 def export_to_srt(data):
-    """Exporta a formato SRT (subtítulos)"""
     srt_content = []
     for i, seg in enumerate(data.segments, 1):
-        start = format_timestamp(seg['start']).replace(':', ',')
-        end = format_timestamp(seg['end']).replace(':', ',')
+        start_time = timedelta(seconds=seg['start'])
+        end_time = timedelta(seconds=seg['end'])
+        start = f"{start_time.seconds // 3600:02}:{(start_time.seconds // 60) % 60:02}:{start_time.seconds % 60:02},{start_time.microseconds // 1000:03}"
+        end = f"{end_time.seconds // 3600:02}:{(end_time.seconds // 60) % 60:02}:{end_time.seconds % 60:02},{end_time.microseconds // 1000:03}"
         text = seg['text'].strip()
-        srt_content.append(f"{i}\n{start},000 --> {end},000\n{text}\n")
+        srt_content.append(f"{i}\n{start} --> {end}\n{text}\n")
     return "\n".join(srt_content)
 
 # --- INTERFAZ DE LA APP ---
@@ -469,34 +324,22 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    
-    model_option = st.selectbox(
-        "Modelo de Transcripción",
-        options=[
-            "whisper-large-v3",
-            "whisper-large-v3-turbo",
-        ],
-        index=0,
-        help="Large-v3: Máxima precisión para español (RECOMENDADO) | Turbo: Más rápido"
-    )
-    
-    language = st.selectbox("Idioma", options=["es", "en", "fr", "de", "it", "pt", "ja", "ko", "zh"], index=0)
+    model_option = st.selectbox("Modelo de Transcripción", ["whisper-large-v3"], index=0, help="Large-v3: Máxima precisión para español (RECOMENDADO)")
+    language = st.selectbox("Idioma", ["es"], index=0, help="Español seleccionado por defecto para máxima calidad de corrección.")
     temperature = st.slider("Temperatura", 0.0, 1.0, 0.0, 0.1, help="Mantén en 0.0 para máxima precisión")
     
     st.markdown("---")
     st.subheader("🎯 Análisis Inteligente")
-    
+    enable_tilde_fix = st.checkbox("✨ Corrección automática de tildes", value=True, help="Repara palabras cortadas y corrige acentos (altamente recomendado).")
     enable_summary = st.checkbox("📝 Generar resumen automático", value=True)
     enable_quotes = st.checkbox("💬 Identificar citas y declaraciones", value=True)
-    enable_tilde_fix = st.checkbox("✨ Corrección automática de tildes", value=True, 
-                                    help="Repara palabras cortadas y corrige acentos")
-    
+    enable_people = st.checkbox("👤 Extraer personas y cargos", value=True) # Nueva opción
+
     st.markdown("---")
     st.subheader("🔧 Procesamiento de Audio")
-    
     if MOVIEPY_AVAILABLE:
-        st.info("💡 Los archivos MP4 mayores a 25 MB se convertirán automáticamente")
-        compress_audio_option = st.checkbox("📦 Comprimir audio adicional", value=False)
+        st.info("💡 Los archivos MP4 > 25 MB se convertirán a audio automáticamente.")
+        compress_audio_option = st.checkbox("📦 Comprimir audio (reduce tamaño)", value=False)
     else:
         st.warning("⚠️ MoviePy no disponible para conversión de video.")
         compress_audio_option = False
@@ -508,10 +351,7 @@ with st.sidebar:
 st.subheader("📤 Sube tu archivo de audio o video")
 col1, col2 = st.columns([3, 1])
 with col1:
-    uploaded_file = st.file_uploader(
-        "Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"],
-        label_visibility="collapsed"
-    )
+    uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         st.session_state.audio_start_time = 0
@@ -522,79 +362,51 @@ with col2:
             try:
                 file_bytes = uploaded_file.getvalue()
                 original_size = get_file_size_mb(file_bytes)
-                file_extension = os.path.splitext(uploaded_file.name)[1].lower()
-                
-                is_video = file_extension in ['.mp4', '.mpeg', '.mpga', '.webm']
-                converted = False
+                is_video = os.path.splitext(uploaded_file.name)[1].lower() in ['.mp4', '.mpeg', '.webm']
                 
                 if is_video and MOVIEPY_AVAILABLE and original_size > 25:
-                    with st.spinner(f"🎬 Archivo de {original_size:.2f} MB detectado. Convirtiendo..."):
+                    with st.spinner(f"🎬 Video de {original_size:.2f} MB. Convirtiendo a audio..."):
                         file_bytes, converted = convert_video_to_audio(file_bytes, uploaded_file.name)
                         if converted:
                             new_size = get_file_size_mb(file_bytes)
-                            reduction = ((original_size - new_size) / original_size) * 100
-                            st.success(f"✅ Convertido: {original_size:.2f} MB → {new_size:.2f} MB (-{reduction:.1f}%)")
+                            st.success(f"✅ Convertido: {original_size:.2f} MB → {new_size:.2f} MB")
                 
                 if MOVIEPY_AVAILABLE and compress_audio_option:
                     with st.spinner("📦 Comprimiendo audio..."):
                         size_before = get_file_size_mb(file_bytes)
                         file_bytes = compress_audio(file_bytes, uploaded_file.name)
-                        size_after = get_file_size_mb(file_bytes)
-                        reduction = ((size_before - size_after) / size_before) * 100
-                        st.success(f"✅ Audio comprimido: {size_before:.2f} MB → {size_after:.2f} MB (-{reduction:.1f}%)")
+                        st.success(f"✅ Comprimido: {size_before:.2f} MB → {get_file_size_mb(file_bytes):.2f} MB")
                 
                 st.session_state.uploaded_audio_bytes = file_bytes
-                st.session_state.original_filename = uploaded_file.name
                 
                 client = Groq(api_key=api_key)
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
                     tmp.write(file_bytes)
                     tmp_file_path = tmp.name
                 
-                with st.spinner("🔄 Transcribiendo con IA avanzada..."):
+                with st.spinner("🔄 Transcribiendo con IA... (puede tardar unos minutos)"):
                     with open(tmp_file_path, "rb") as audio_file:
-                        audio_content = audio_file.read()
-                        safe_filename = uploaded_file.name.encode('utf-8').decode('utf-8')
-                        
-                        # PROMPT MEJORADO para forzar tildes en español
-                        spanish_prompt = """Transcribe cuidadosamente en español con todos los acentos:
-- Palabras con tilde obligatoria: qué, por qué, más, está, sí, sé, tú, mí, él, ella
-- Usa 'sí' con tilde para afirmativo (yes), como en 'dijo sí', 'es sí', pero 'si' sin tilde para condicional (if).
-- Palabras terminadas en -ión: fundación, información, situación, declaración, nación, población
-- Palabras terminadas en -ía: compañía, energía, geografía, economía, autonomía
-- Nombres propios: Colombia, Amazonía, América
-- Nunca cortes palabras en mitad de la sílaba. Completa todas las palabras.
-- Evita cortar palabras como 'qué' en 'qu', 'por qué' en 'por qu', 'lanzó' en 'lanz', o 'miércoles' en 'miérco'. Asegura que todas las palabras estén completas y con acentos correctos.
-- Mantén la integridad de las palabras: no omitas sílabas finales, especialmente en palabras con acentos como 'amazónica', 'sostenible', 'documental'."""
+                        spanish_prompt = """Transcribe cuidadosamente en español. Asegura que todas las palabras estén completas y con sus acentos correctos. Presta especial atención a: qué, por qué, sí, está, más, él. Completa palabras como: fundación, información, situación, declaración, compañía, economía, miércoles, sostenible, documental."""
                         
                         transcription = client.audio.transcriptions.create(
-                            file=(safe_filename, audio_content),
+                            file=(uploaded_file.name, audio_file.read()),
                             model=model_option,
                             temperature=temperature,
                             language=language,
                             response_format="verbose_json",
                             prompt=spanish_prompt if language == "es" else None
                         )
-                
                 os.unlink(tmp_file_path)
                 
-                # Post-procesar para corregir tildes si está habilitado
+                transcription_text = transcription.text
                 if enable_tilde_fix and language == "es":
-                    with st.spinner("✨ Aplicando correcciones de tildes y palabras cortadas..."):
+                    with st.spinner("✨ Aplicando correcciones de tildes..."):
                         transcription_text = fix_spanish_encoding(transcription.text)
-                        
-                        # También corregir los segmentos individuales
                         if hasattr(transcription, 'segments'):
                             for segment in transcription.segments:
                                 segment['text'] = fix_spanish_encoding(segment['text'])
-                        
-                        # Verificar calidad
                         quality_issues = check_transcription_quality(transcription_text)
-                        if quality_issues:
-                            for issue in quality_issues:
-                                st.info(issue)
-                else:
-                    transcription_text = transcription.text
+                        for issue in quality_issues: st.info(issue)
                 
                 st.session_state.transcription = transcription_text
                 st.session_state.transcription_data = transcription
@@ -604,6 +416,8 @@ with col2:
                         st.session_state.summary = generate_summary(transcription_text, client)
                     if enable_quotes:
                         st.session_state.quotes = extract_quotes(transcription.segments)
+                    if enable_people:
+                        st.session_state.people = extract_people_and_roles(transcription_text, client)
                 
                 st.success("✅ ¡Transcripción y análisis completados!")
                 st.balloons()
@@ -613,51 +427,29 @@ with col2:
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
-    
-    # Reproductor de audio
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
-    st.write("")
-    
-    # PESTAÑAS PRINCIPALES
-    tab1, tab2, tab3 = st.tabs(["📝 Transcripción", "📊 Resumen", "💬 Citas y Declaraciones"])
+    # PESTAÑAS PRINCIPALES (Ahora con 4 pestañas)
+    tab_titles = ["📝 Transcripción", "📊 Resumen", "💬 Citas y Declaraciones"]
+    if 'people' in st.session_state:
+        tab_titles.append("👥 Personas Clave")
+        
+    tabs = st.tabs(tab_titles)
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN =====
-    with tab1:
+    with tabs[0]:
         HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
-        TRANSCRIPTION_BOX_STYLE = """
-            background-color: #0E1117;
-            color: #FAFAFA;
-            border: 1px solid #333;
-            border-radius: 10px;
-            padding: 1.5rem;
-            max-height: 500px;
-            overflow-y: auto;
-            font-family: "Source Code Pro", "Consolas", monospace;
-            line-height: 1.7;
-            white-space: pre-wrap;
-            font-size: 0.95rem;
-        """
+        TRANSCRIPTION_BOX_STYLE = "background-color: #0E1117; color: #FAFAFA; border: 1px solid #333; border-radius: 10px; padding: 1.5rem; max-height: 500px; overflow-y: auto; font-family: 'Source Code Pro', monospace; line-height: 1.7; white-space: pre-wrap; font-size: 0.95rem;"
 
-        # Búsqueda en transcripción
         col_search1, col_search2 = st.columns([4, 1])
-        
         with col_search1:
-            search_query = st.text_input(
-                "🔎 Buscar en la transcripción:", 
-                value=st.session_state.get('last_search', ''),
-                placeholder="Escribe para encontrar y escuchar un momento exacto...",
-                key=f"search_input_{st.session_state.get('search_counter', 0)}"
-            )
-            
-            if search_query != st.session_state.get('last_search', ''):
-                st.session_state.last_search = search_query
-        
+            search_query = st.text_input("🔎 Buscar en la transcripción:", value=st.session_state.get('last_search', ''), key=f"search_input_{st.session_state.get('search_counter', 0)}")
+            if search_query != st.session_state.get('last_search', ''): st.session_state.last_search = search_query
         with col_search2:
             st.write("")
             if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query):
                 st.session_state.last_search = ""
-                st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
+                st.session_state.search_counter += 1
                 st.rerun()
         
         if search_query:
@@ -665,142 +457,100 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
                 matching_indices = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
-
                 if not matching_indices:
                     st.info("No se encontraron coincidencias.")
                 else:
                     st.success(f"✅ {len(matching_indices)} coincidencia(s) encontrada(s)")
-                    indices_to_display = set()
-                    for idx in matching_indices:
-                        indices_to_display.update(range(max(0, idx - 1), min(len(segments), idx + 2)))
-                    
-                    last_index = -2
+                    indices_to_display = set(idx for idx in matching_indices)
                     for i in sorted(list(indices_to_display)):
-                        if i > last_index + 1:
-                            st.markdown("---")
-                        
                         segment = segments[i]
                         start_seconds = int(segment['start'])
-                        start_time_formatted = format_timestamp(start_seconds)
-                        text = segment['text'].strip()
-
                         col_ts, col_text = st.columns([0.2, 0.8], gap="small")
-
                         with col_ts:
-                            if st.button(f"▶️ {start_time_formatted}", key=f"play_search_{i}", use_container_width=True):
+                            if st.button(f"▶️ {format_timestamp(start_seconds)}", key=f"play_search_{i}", use_container_width=True):
                                 st.session_state.audio_start_time = start_seconds
                                 st.rerun()
-
                         with col_text:
-                            if i in matching_indices:
-                                highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', text)
-                                st.markdown(highlighted_text, unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"<span style='color: #888;'>{text}</span>", unsafe_allow_html=True)
-                        last_index = i
-        
-        # Mostrar transcripción completa
+                            highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', segment['text'].strip())
+                            st.markdown(highlighted_text, unsafe_allow_html=True)
+
         st.markdown("**Transcripción completa:**")
-        
+        transcription_html = st.session_state.transcription.replace('\n', '<br>')
         if search_query:
             pattern = re.compile(re.escape(search_query), re.IGNORECASE)
-            highlighted_transcription = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', st.session_state.transcription)
-            transcription_html = highlighted_transcription.replace('\n', '<br>')
-        else:
-            transcription_html = st.session_state.transcription.replace('\n', '<br>')
-            
+            transcription_html = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', transcription_html)
         st.markdown(f'<div style="{TRANSCRIPTION_BOX_STYLE}">{transcription_html}</div>', unsafe_allow_html=True)
 
-        # Botones de descarga
         st.write("")
         col_d1, col_d2, col_d3, col_d4 = st.columns([2, 2, 2, 1.5])
         with col_d1:
-            transcription_utf8 = st.session_state.transcription.encode('utf-8').decode('utf-8')
-            st.download_button(
-                "💾 Descargar TXT Simple", 
-                transcription_utf8.encode('utf-8'),
-                "transcripcion.txt", 
-                "text/plain; charset=utf-8",
-                use_container_width=True
-            )
+            st.download_button("💾 Descargar TXT Simple", st.session_state.transcription.encode('utf-8'), "transcripcion.txt", "text/plain; charset=utf-8", use_container_width=True)
         with col_d2:
-            timestamped_text = format_transcription_with_timestamps(st.session_state.transcription_data)
-            st.download_button(
-                "💾 TXT con Tiempos", 
-                timestamped_text.encode('utf-8'),
-                "transcripcion_tiempos.txt", 
-                "text/plain; charset=utf-8",
-                use_container_width=True
-            )
+            st.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data).encode('utf-8'), "transcripcion_tiempos.txt", "text/plain; charset=utf-8", use_container_width=True)
         with col_d3:
-            srt_content = export_to_srt(st.session_state.transcription_data)
-            st.download_button(
-                "💾 SRT Subtítulos", 
-                srt_content.encode('utf-8'),
-                "subtitulos.srt", 
-                "text/plain; charset=utf-8",
-                use_container_width=True
-            )
+            st.download_button("💾 SRT Subtítulos", export_to_srt(st.session_state.transcription_data).encode('utf-8'), "subtitulos.srt", "application/x-subrip; charset=utf-8", use_container_width=True)
         with col_d4:
             create_copy_button(st.session_state.transcription)
     
     # ===== PESTAÑA 2: RESUMEN =====
-    with tab2:
+    with tabs[1]:
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo")
             st.markdown(st.session_state.summary)
-            
             st.write("")
             col_s1, col_s2 = st.columns([3, 1])
             with col_s1:
-                st.download_button(
-                    "💾 Descargar Resumen",
-                    st.session_state.summary.encode('utf-8'),
-                    "resumen.txt",
-                    "text/plain; charset=utf-8",
-                    use_container_width=True
-                )
+                st.download_button("💾 Descargar Resumen", st.session_state.summary.encode('utf-8'), "resumen.txt", "text/plain; charset=utf-8", use_container_width=True)
             with col_s2:
                 create_copy_button(st.session_state.summary)
         else:
             st.info("📝 El resumen no fue generado. Activa la opción en el sidebar y vuelve a transcribir.")
     
     # ===== PESTAÑA 3: CITAS Y DECLARACIONES =====
-    with tab3:
+    with tabs[2]:
         if 'quotes' in st.session_state and st.session_state.quotes:
             st.markdown("### 💬 Citas y Declaraciones Relevantes")
-            st.caption(f"Se encontraron {len(st.session_state.quotes)} citas y declaraciones importantes")
-            
+            st.caption(f"Se encontraron {len(st.session_state.quotes)} citas y declaraciones importantes.")
             for idx, quote in enumerate(st.session_state.quotes):
-                with st.container():
-                    if quote['type'] == 'quote':
-                        type_badge = "🗣️ **Cita Textual**"
-                    else:
-                        type_badge = "📢 **Declaración**"
-                    
-                    st.markdown(type_badge)
-                    
-                    col_q1, col_q2 = st.columns([0.12, 0.88])
-                    with col_q1:
-                        if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
-                            st.session_state.audio_start_time = int(quote['start'])
-                            st.rerun()
-                    with col_q2:
-                        st.markdown(f"*{quote['text']}*")
-                        
-                        if quote['full_context'] and quote['full_context'] != quote['text']:
-                            with st.expander("📄 Ver contexto completo"):
-                                st.markdown(quote['full_context'])
-                    
-                    st.markdown("---")
+                type_badge = "🗣️ **Cita Textual**" if quote['type'] == 'quote' else "📢 **Declaración**"
+                st.markdown(type_badge)
+                col_q1, col_q2 = st.columns([0.12, 0.88])
+                with col_q1:
+                    if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
+                        st.session_state.audio_start_time = int(quote['start'])
+                        st.rerun()
+                with col_q2:
+                    st.markdown(f"*{quote['text']}*")
+                    if quote['full_context'] and quote['full_context'] != quote['text']:
+                        with st.expander("📄 Ver contexto completo"):
+                            st.markdown(quote['full_context'])
+                st.markdown("---")
         else:
-            st.info("💬 No se identificaron citas o declaraciones relevantes. Asegúrate de activar la opción en el sidebar.")
-    
+            st.info("💬 No se identificaron citas o declaraciones relevantes.")
+
+    # ===== PESTAÑA 4: PERSONAS CLAVE (NUEVA) =====
+    if 'people' in st.session_state:
+        with tabs[3]:
+            st.markdown("### 👥 Personas y Cargos Mencionados")
+            people_data = st.session_state.people
+            if people_data and not ("Error" in people_data[0]['name']):
+                st.caption(f"Se identificaron {len(people_data)} personas clave.")
+                for person in people_data:
+                    st.markdown(f"**- {person['name']}**")
+                    st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;*Rol:* {person.get('role', 'No especificado')}")
+                    with st.expander("Ver contexto"):
+                        st.markdown(f"> {person.get('context', 'Sin contexto disponible.')}")
+            elif people_data:
+                 st.error(f"**{people_data[0]['name']}**: {people_data[0]['role']}")
+                 st.info(f"Contexto del error: {people_data[0]['context']}")
+            else:
+                st.info("👤 No se identificaron personas o cargos específicos en el audio.")
+
     # Botón de limpiar
     st.markdown("---")
-    if st.button("🗑️ Limpiar Todo y Empezar de Nuevo", type="secondary", use_container_width=False):
+    if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "quotes", "last_search", "search_counter", "original_filename"]
+                        "summary", "quotes", "last_search", "search_counter", "people"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
@@ -808,6 +558,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.6</strong> - Desarrollado por Johnathan Cortés 🤖</p>
-<p style='font-size: 0.85rem;'>✨ Con reparación avanzada de palabras cortadas y acentos en español</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.3</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p style='font-size: 0.85rem;'>✨ Con reparación avanzada de palabras cortadas, acentos y extracción de entidades en español</p>
 </div>""", unsafe_allow_html=True)
