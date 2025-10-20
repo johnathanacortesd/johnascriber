@@ -161,6 +161,14 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bTipologi(?=\s|$)': 'Tipología',
     r'\bampliaci(?=\s|$)': 'ampliación',
     r'\bAmplicaci(?=\s|$)': 'Ampliación',
+    
+    # Correcciones para palabras con tilde en i, como "sí"
+    r'\bsi\b': 'sí',
+    r'\bSi\b': 'Sí',
+    r'\bmi\b': 'mí',
+    r'\bMi\b': 'Mí',
+    r'\bti\b': 'tí',
+    r'\bTi\b': 'Tí',
 }
 
 # --- FUNCIONES AUXILIARES ORIGINALES ---
@@ -285,6 +293,11 @@ def fix_spanish_encoding(text):
     
     for pattern, replacement in final_fixes:
         result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    
+    # PASO ADICIONAL: Corregir "si" a "sí" en contextos afirmativos
+    # Esto es aproximado: cambiamos "si" independiente si no es seguido de palabras que indican condicional
+    result = re.sub(r'\bsi(?!\s+(no|pero|que|de|la|el|en|un|una|por|con|para|como|desde|hasta|antes|después|sobre|entre|tras|durante|sin))\b', 'sí', result, flags=re.IGNORECASE)
+    result = re.sub(r'\bSi(?!\s+(no|pero|que|de|la|el|en|un|una|por|con|para|como|desde|hasta|antes|después|sobre|entre|tras|durante|sin))\b', 'Sí', result, flags=re.IGNORECASE)
     
     return result
 
@@ -545,7 +558,8 @@ with col2:
                         
                         # PROMPT MEJORADO para forzar tildes en español
                         spanish_prompt = """Transcribe cuidadosamente en español con todos los acentos:
-- Palabras con tilde obligatoria: qué, por qué, más, está, sí, sé, tú, mí, mí, él, ella
+- Palabras con tilde obligatoria: qué, por qué, más, está, sí, sé, tú, mí, él, ella
+- Usa 'sí' con tilde para afirmativo (yes), como en 'dijo sí', 'es sí', pero 'si' sin tilde para condicional (if).
 - Palabras terminadas en -ión: fundación, información, situación, declaración, nación, población
 - Palabras terminadas en -ía: compañía, energía, geografía, economía, autonomía
 - Nombres propios: Colombia, Amazonía, América
@@ -794,6 +808,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.5</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.6</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 <p style='font-size: 0.85rem;'>✨ Con reparación avanzada de palabras cortadas y acentos en español</p>
 </div>""", unsafe_allow_html=True)
