@@ -501,7 +501,8 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 1: TRANSCRIPCIÓN MEJORADA =====
     with tabs[0]:
         HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
-        CONTEXT_STYLE = "background-color: #2a2a2a; color: #e0e0e0; padding: 2px 5px; border-radius: 3px;"
+        MATCH_LINE_STYLE = "background-color: #1e3a5f; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311; color: #ffffff; font-size: 1rem; line-height: 1.6;"
+        CONTEXT_LINE_STYLE = "background-color: #1a1a1a; padding: 0.6rem; border-radius: 4px; color: #b8b8b8; font-size: 0.92rem; line-height: 1.5; border-left: 2px solid #404040;"
         TRANSCRIPTION_BOX_STYLE = "background-color: #0E1117; color: #FAFAFA; border: 1px solid #333; border-radius: 10px; padding: 1.5rem; max-height: 500px; overflow-y: auto; font-family: 'Source Code Pro', monospace; line-height: 1.7; white-space: pre-wrap; font-size: 0.95rem;"
 
         col_search1, col_search2 = st.columns([4, 1])
@@ -550,12 +551,12 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                             
                             with col_content:
                                 if ctx_seg['is_match']:
-                                    # Resaltar la línea que contiene la búsqueda
+                                    # Resaltar la línea que contiene la búsqueda con mejor visibilidad
                                     highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', ctx_seg['text'])
-                                    st.markdown(f"<div style='background-color: #1a1a1a; padding: 0.7rem; border-radius: 5px; border-left: 4px solid #fca311;'>{highlighted_text}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='{MATCH_LINE_STYLE}'><strong>🎯 </strong>{highlighted_text}</div>", unsafe_allow_html=True)
                                 else:
-                                    # Mostrar contexto con estilo diferente
-                                    st.markdown(f"<div style='color: #999; padding: 0.5rem; font-size: 0.9rem;'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
+                                    # Mostrar contexto con estilo mejorado
+                                    st.markdown(f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
                         
                         if result_num < len(matching_indices):
                             st.markdown("---")
