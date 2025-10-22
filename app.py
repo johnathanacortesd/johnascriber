@@ -147,7 +147,7 @@ def compress_audio(audio_bytes, original_filename):
 def get_file_size_mb(file_bytes):
     return len(file_bytes) / (1024 * 1024)
 
-# --- FUNCIONES DE ANÁLISIS (ACTUALIZADAS AL MODELO 70B-VERSATILE) ---
+# --- FUNCIONES DE ANÁLISIS (ACTUALIZADAS AL MODELO llama-3.3-70b-versatile) ---
 
 def generate_summary(transcription_text, client):
     try:
