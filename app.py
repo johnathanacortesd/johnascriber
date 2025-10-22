@@ -1,3 +1,8 @@
+# ==============================================================================
+# Transcriptor Pro - Johnascriptor v2.4.4 (Versión Definitiva)
+# CÓDIGO COMPLETO - Copia todo desde aquí hasta el final del archivo.
+# ==============================================================================
+
 import streamlit as st
 from groq import Groq
 import tempfile
@@ -176,19 +181,14 @@ def fix_spanish_encoding(text):
     
     result = text
     
-    # PASO 1: Corregir problemas de encoding UTF-8 (si los hubiera)
     encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
 
-    # PASO 2: Aplicar todas las correcciones del diccionario
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
         result = re.sub(pattern, replacement, result)
 
-    # PASO 3: Limpieza de artefactos y duplicaciones comunes
     result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result, flags=re.IGNORECASE)
-    
-    # PASO 4: Corrección de mayúsculas al inicio de la frase después de un punto.
     result = re.sub(r'(?<=\.\s)([a-z])', lambda m: m.group(1).upper(), result)
 
     return result.strip()
@@ -258,16 +258,13 @@ def generate_summary(transcription_text, client):
         return f"Error al generar resumen: {str(e)}"
 
 def answer_question(question, transcription_text, client, conversation_history):
-    """Responde preguntas sobre la transcripción usando el contexto completo y el historial de conversación."""
     try:
         messages = [
             {"role": "system", "content": """Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción proporcionada de manera precisa, concisa y profesional. 
             Reglas importantes:
-            - Basa tus respuestas ÚNICAMENTE en la información de la transcripción
-            - Si la información no está en la transcripción, indícalo claramente
-            - Mantén todas las tildes y acentos correctos en español
-            - Sé específico y cita partes relevantes cuando sea apropiado
-            - Si te hacen una pregunta de seguimiento, considera el contexto de la conversación anterior"""}
+            - Basa tus respuestas ÚNICAMENTE en la información de la transcripción.
+            - Si la información no está en la transcripción, indícalo claramente.
+            - Mantén todas las tildes y acentos correctos en español."""}
         ]
         
         for qa in conversation_history:
@@ -316,19 +313,11 @@ def extract_people_and_roles(transcription_text, client):
             messages=[
                 {
                     "role": "system",
-                    "content": """Eres un analista experto en transcripciones de noticias. Tu tarea es identificar a todas las personas mencionadas por su nombre y, si se especifica, su cargo o rol. Debes devolver la información en formato JSON.
-                    El JSON debe ser una lista de objetos. Cada objeto debe tener tres claves: "name", "role" y "context".
-                    - "name": El nombre completo de la persona.
-                    - "role": El cargo o rol asociado (ej: "Presidente", "Director de la Fundación", "Analista"). Si no se menciona un rol, usa el valor "No especificado".
-                    - "context": La frase exacta de la transcripción donde se menciona a la persona y su rol.
-                    Asegúrate de que el JSON esté bien formado."""
+                    "content": """Eres un analista experto en transcripciones. Tu tarea es identificar personas y sus roles. Devuelve la información como una lista JSON. Cada objeto debe tener "name", "role" y "context". Si no hay rol, usa "No especificado". Asegura que el JSON sea válido."""
                 },
                 {
                     "role": "user",
-                    "content": f"""Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:
-
-                    {transcription_text}
-                    """
+                    "content": f"Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Transcripción:\n\n{transcription_text}"
                 }
             ],
             model="llama-3.1-70b-versatile",
@@ -339,13 +328,14 @@ def extract_people_and_roles(transcription_text, client):
         response_content = chat_completion.choices[0].message.content
         data = json.loads(response_content)
         
+        # El modelo a veces anida la lista. Hay que buscarla.
         for key in data:
             if isinstance(data[key], list):
                 return data[key]
         return []
 
     except json.JSONDecodeError:
-        return [{"name": "Error de Análisis", "role": "No se pudo procesar la respuesta de la IA", "context": "El modelo no devolvió un JSON válido."}]
+        return [{"name": "Error de Análisis", "role": "No se pudo procesar la respuesta de la IA (JSON inválido).", "context": "N/A"}]
     except Exception as e:
         return [{"name": "Error de API", "role": str(e), "context": "Ocurrió un error al contactar con el servicio de análisis."}]
 
@@ -415,11 +405,10 @@ col1, col2 = st.columns([3, 1])
 with col1:
     uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
 
-# <<< CORRECCIÓN DE INDENTACIÓN AQUÍ
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         st.session_state.audio_start_time = 0
-        st.session_state.audio_player_key = 0 # Reiniciar la key del reproductor también
+        st.session_state.audio_player_key = 0
         st.session_state.last_search = ""
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
@@ -694,6 +683,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.4.3 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.4.4 (Versión Definitiva)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p>
 </div>""", unsafe_allow_html=True)
