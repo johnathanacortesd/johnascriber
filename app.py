@@ -147,7 +147,7 @@ def compress_audio(audio_bytes, original_filename):
 def get_file_size_mb(file_bytes):
     return len(file_bytes) / (1024 * 1024)
 
-# --- FUNCIONES DE ANÁLISIS (ACTUALIZADAS) ---
+# --- FUNCIONES DE ANÁLISIS (ACTUALIZADAS Y CORREGIDAS) ---
 
 def generate_summary(transcription_text, client):
     try:
@@ -158,7 +158,7 @@ def generate_summary(transcription_text, client):
             ],
             model="llama-3.1-70b-versatile", 
             temperature=0.3, 
-            max_completion_tokens=500
+            max_tokens=500  # Parámetro corregido
         )
         return chat_completion.choices[0].message.content
     except Exception as e: return f"Error al generar resumen: {str(e)}"
@@ -174,7 +174,7 @@ def answer_question(question, transcription_text, client, conversation_history):
             messages=messages, 
             model="llama-3.1-70b-versatile", 
             temperature=0.2, 
-            max_completion_tokens=800
+            max_tokens=800  # Parámetro corregido
         )
         return chat_completion.choices[0].message.content
     except Exception as e: return f"Error al procesar la pregunta: {str(e)}"
@@ -200,7 +200,7 @@ def extract_people_and_roles(transcription_text, client):
             messages=[{"role": "system", "content": 'Eres un analista experto en transcripciones de noticias. Tu tarea es identificar a todas las personas mencionadas por su nombre y, si se especifica, su cargo o rol. Debes devolver la información en formato JSON. El JSON debe ser una lista de objetos. Cada objeto debe tener tres claves: "name", "role" y "context".\n- "name": El nombre completo de la persona.\n- "role": El cargo o rol asociado (ej: "Presidente", "Director de la Fundación", "Analista"). Si no se menciona un rol, usa el valor "No especificado".\n- "context": La frase exacta de la transcripción donde se menciona a la persona y su rol.\nAsegúrate de que el JSON esté bien formado.'}, {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:\n\n{transcription_text}"}],
             model="llama-3.1-70b-versatile", 
             temperature=0.1, 
-            max_completion_tokens=1024, 
+            max_tokens=1024,  # Parámetro corregido
             response_format={"type": "json_object"}
         )
         response_content = chat_completion.choices[0].message.content
@@ -369,4 +369,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.4.4 (Modelo IA Versatile)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.4.5 (Parámetro API Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
