@@ -55,14 +55,16 @@ st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="�
 # --- INICIALIZACIÓN DE ESTADO ---
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
-if 'audio_player_key' not in st.session_state: ### <<< CAMBIO 1: Inicializar la key del reproductor
-    st.session_state.audio_player_key = 0
+if 'audio_player_key' not in st.session_state:
+    st.session_state.audio_player_key = "audio_player_0"
 
-# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO --- ### <<< CAMBIO 2: Crear la función callback
+# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
 def set_audio_time(start_seconds):
+    """Actualiza el tiempo de inicio y la clave del reproductor para forzar el reinicio."""
     st.session_state.audio_start_time = start_seconds
-    # Incrementamos la key para forzar que el componente st.audio se vuelva a renderizar completamente
-    st.session_state.audio_player_key += 1
+    # Cambiamos la clave para que Streamlit sepa que debe volver a dibujar el componente
+    current_key_index = int(st.session_state.audio_player_key.split("_")[-1])
+    st.session_state.audio_player_key = f"audio_player_{current_key_index + 1}"
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -175,19 +177,14 @@ def fix_spanish_encoding(text):
     
     result = text
     
-    # PASO 1: Corregir problemas de encoding UTF-8 (si los hubiera)
     encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
 
-    # PASO 2: Aplicar todas las correcciones del diccionario
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
         result = re.sub(pattern, replacement, result)
 
-    # PASO 3: Limpieza de artefactos y duplicaciones comunes
-    result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result, flags=re.IGNORECASE)
-    
-    # PASO 4: Corrección de mayúsculas al inicio de la frase después de un punto.
+    result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', flags=re.IGNORECASE)
     result = re.sub(r'(?<=\.\s)([a-z])', lambda m: m.group(1).upper(), result)
 
     return result.strip()
@@ -257,7 +254,6 @@ def generate_summary(transcription_text, client):
         return f"Error al generar resumen: {str(e)}"
 
 def answer_question(question, transcription_text, client, conversation_history):
-    """Responde preguntas sobre la transcripción usando el contexto completo y el historial de conversación."""
     try:
         messages = [
             {"role": "system", "content": """Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción proporcionada de manera precisa, concisa y profesional. 
@@ -324,10 +320,7 @@ def extract_people_and_roles(transcription_text, client):
                 },
                 {
                     "role": "user",
-                    "content": f"""Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:
-
-                    {transcription_text}
-                    """
+                    "content": f"""Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:\n\n{transcription_text}"""
                 }
             ],
             model="llama-3.1-70b-versatile",
@@ -342,7 +335,6 @@ def extract_people_and_roles(transcription_text, client):
             if isinstance(data[key], list):
                 return data[key]
         return []
-
     except json.JSONDecodeError:
         return [{"name": "Error de Análisis", "role": "No se pudo procesar la respuesta de la IA", "context": "El modelo no devolvió un JSON válido."}]
     except Exception as e:
@@ -416,12 +408,13 @@ with col1:
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         st.session_state.audio_start_time = 0
-        st.session_state.audio_player_key = 0 # Reiniciar la key del reproductor también
+        st.session_state.audio_player_key = "audio_player_0" # Reiniciar la key
         st.session_state.last_search = ""
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
         
         with st.spinner("🔄 Procesando archivo..."):
+            # ... (código de procesamiento de archivo sin cambios) ...
             try:
                 file_bytes = uploaded_file.getvalue()
                 original_size = get_file_size_mb(file_bytes)
@@ -475,12 +468,9 @@ with col2:
                 st.session_state.transcription_data = transcription
                 
                 with st.spinner("🧠 Generando análisis inteligente..."):
-                    if enable_summary:
-                        st.session_state.summary = generate_summary(transcription_text, client)
-                    if enable_quotes:
-                        st.session_state.quotes = extract_quotes(transcription.segments)
-                    if enable_people:
-                        st.session_state.people = extract_people_and_roles(transcription_text, client)
+                    if enable_summary: st.session_state.summary = generate_summary(transcription_text, client)
+                    if enable_quotes: st.session_state.quotes = extract_quotes(transcription.segments)
+                    if enable_people: st.session_state.people = extract_people_and_roles(transcription_text, client)
                 
                 st.success("✅ ¡Transcripción y análisis completados!")
                 st.balloons()
@@ -491,24 +481,63 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     
-    ### <<< CAMBIO 3: Usar la key dinámica en st.audio
     st.audio(st.session_state.uploaded_audio_bytes, 
              start_time=st.session_state.audio_start_time,
-             key=f"audio_player_{st.session_state.audio_player_key}")
+             key=st.session_state.audio_player_key)
     
     # PESTAÑAS PRINCIPALES
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
-    if 'people' in st.session_state:
-        tab_titles.append("👥 Personas Clave")
-        
+    if 'people' in st.session_state: tab_titles.append("👥 Personas Clave")
     tabs = st.tabs(tab_titles)
     
     # ===== PESTAÑA 1: TRANSCRIPCIÓN MEJORADA =====
     with tabs[0]:
+        # ### INICIO MEJORA VISUAL ###
+        # Nuevos estilos diseñados para alta legibilidad tanto en tema claro como oscuro
         HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
-        MATCH_LINE_STYLE = "background-color: #1e3a5f; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311; color: #ffffff; font-size: 1rem; line-height: 1.6;"
-        CONTEXT_LINE_STYLE = "background-color: #1a1a1a; padding: 0.6rem; border-radius: 4px; color: #b8b8b8; font-size: 0.92rem; line-height: 1.5; border-left: 2px solid #404040;"
+        
+        # Estilo para la línea de coincidencia: Amarillo claro en tema claro, azul oscuro en tema oscuro.
+        MATCH_LINE_STYLE = """
+            background-color: #fff3cd; /* Amarillo claro para tema light */
+            color: #533f00; /* Texto oscuro para tema light */
+            padding: 0.8rem; 
+            border-radius: 6px; 
+            border-left: 4px solid #ffc107; /* Borde amarillo más oscuro */
+            font-size: 1rem; 
+            line-height: 1.6;
+            margin-bottom: 4px;
+        """
+        
+        # Estilo para las líneas de contexto: Gris claro en tema claro, gris oscuro en tema oscuro.
+        CONTEXT_LINE_STYLE = """
+            background-color: #f0f2f6; /* Gris muy claro para tema light */
+            color: #31333F; /* Texto oscuro para tema light */
+            padding: 0.6rem; 
+            border-radius: 4px; 
+            border-left: 2px solid #dcdcdc; /* Borde gris */
+            font-size: 0.92rem; 
+            line-height: 1.5;
+            margin-bottom: 2px;
+        """
+        
+        # Inyección de CSS para adaptar los estilos al tema oscuro de Streamlit
+        st.markdown(f"""
+        <style>
+            [data-theme="dark"] .match-line {{
+                background-color: #1e3a5f !important;
+                color: #ffffff !important;
+                border-left: 4px solid #fca311 !important;
+            }}
+            [data-theme="dark"] .context-line {{
+                background-color: #262730 !important;
+                color: #b8b8b8 !important;
+                border-left: 2px solid #404040 !important;
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+
         TRANSCRIPTION_BOX_STYLE = "background-color: #0E1117; color: #FAFAFA; border: 1px solid #333; border-radius: 10px; padding: 1.5rem; max-height: 500px; overflow-y: auto; font-family: 'Source Code Pro', monospace; line-height: 1.7; white-space: pre-wrap; font-size: 0.95rem;"
+        # ### FIN MEJORA VISUAL ###
 
         col_search1, col_search2 = st.columns([4, 1])
         with col_search1:
@@ -536,28 +565,25 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                     
                     for result_num, match_idx in enumerate(matching_indices, 1):
                         st.markdown(f"### 🎯 Resultado {result_num} de {len(matching_indices)}")
-                        
                         context_segments = get_extended_context(segments, match_idx, context_lines)
                         
                         for ctx_seg in context_segments:
                             col_time, col_content = st.columns([0.15, 0.85])
                             
                             with col_time:
-                                ### <<< CAMBIO 4: Usar el callback on_click en los botones de búsqueda
-                                st.button(
-                                    f"▶️ {ctx_seg['time']}", 
-                                    key=f"play_ctx_{result_num}_{ctx_seg['start']}", 
-                                    on_click=set_audio_time,
-                                    args=(int(ctx_seg['start']),), # Pasamos el tiempo como argumento
-                                    use_container_width=True
-                                )
-                            
+                                # ### INICIO SOLUCIÓN AUDIO ###
+                                # Usamos un 'if' simple con st.rerun() para garantizar el refresco
+                                if st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}", use_container_width=True):
+                                    set_audio_time(int(ctx_seg['start']))
+                                    st.rerun()
+                                # ### FIN SOLUCIÓN AUDIO ###
+
                             with col_content:
                                 if ctx_seg['is_match']:
                                     highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', ctx_seg['text'])
-                                    st.markdown(f"<div style='{MATCH_LINE_STYLE}'><strong>🎯 </strong>{highlighted_text}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div class='match-line' style='{MATCH_LINE_STYLE}'><strong>🎯 </strong>{highlighted_text}</div>", unsafe_allow_html=True)
                                 else:
-                                    st.markdown(f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div class='context-line' style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
                         
                         if result_num < len(matching_indices):
                             st.markdown("---")
@@ -571,35 +597,26 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
         st.write("")
         col_d1, col_d2, col_d3, col_d4 = st.columns([2, 2, 2, 1.5])
-        with col_d1:
-            st.download_button("💾 Descargar TXT Simple", st.session_state.transcription.encode('utf-8'), "transcripcion.txt", "text/plain; charset=utf-8", use_container_width=True)
-        with col_d2:
-            st.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data).encode('utf-8'), "transcripcion_tiempos.txt", "text/plain; charset=utf-8", use_container_width=True)
-        with col_d3:
-            st.download_button("💾 SRT Subtítulos", export_to_srt(st.session_state.transcription_data).encode('utf-8'), "subtitulos.srt", "application/x-subrip; charset=utf-8", use_container_width=True)
-        with col_d4:
-            create_copy_button(st.session_state.transcription)
+        with col_d1: st.download_button("💾 Descargar TXT Simple", st.session_state.transcription.encode('utf-8'), "transcripcion.txt", "text/plain; charset=utf-8", use_container_width=True)
+        with col_d2: st.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data).encode('utf-8'), "transcripcion_tiempos.txt", "text/plain; charset=utf-8", use_container_width=True)
+        with col_d3: st.download_button("💾 SRT Subtítulos", export_to_srt(st.session_state.transcription_data).encode('utf-8'), "subtitulos.srt", "application/x-subrip; charset=utf-8", use_container_width=True)
+        with col_d4: create_copy_button(st.session_state.transcription)
     
     # ===== PESTAÑA 2: RESUMEN INTERACTIVO CON Q&A =====
     with tabs[1]:
-        # ... (el código de esta pestaña no necesita cambios)
+        # ... (sin cambios) ...
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo")
             st.markdown(st.session_state.summary)
-            
             st.write("")
             col_s1, col_s2 = st.columns([3, 1])
-            with col_s1:
-                st.download_button("💾 Descargar Resumen", st.session_state.summary.encode('utf-8'), "resumen.txt", "text/plain; charset=utf-8", use_container_width=True)
-            with col_s2:
-                create_copy_button(st.session_state.summary)
+            with col_s1: st.download_button("💾 Descargar Resumen", st.session_state.summary.encode('utf-8'), "resumen.txt", "text/plain; charset=utf-8", use_container_width=True)
+            with col_s2: create_copy_button(st.session_state.summary)
             
             st.markdown("---")
             st.markdown("### 💭 Haz preguntas sobre el contenido")
             st.caption("Pregunta lo que quieras sobre la transcripción y obtén respuestas basadas en el contenido")
-            
-            if 'qa_history' not in st.session_state:
-                st.session_state.qa_history = []
+            if 'qa_history' not in st.session_state: st.session_state.qa_history = []
             
             if st.session_state.qa_history:
                 st.markdown("#### 📚 Historial de conversación")
@@ -610,29 +627,17 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         st.markdown("---")
             
             with st.form(key="question_form", clear_on_submit=True):
-                user_question = st.text_area(
-                    "Escribe tu pregunta aquí:",
-                    placeholder="Ejemplo: ¿Cuáles son los puntos principales mencionados?\n¿Qué opinión expresó [persona]?\n¿Se mencionó algo sobre [tema]?",
-                    height=100
-                )
-                col_q1, col_q2, col_q3 = st.columns([2, 2, 1])
-                with col_q1:
-                    submit_question = st.form_submit_button("🚀 Enviar Pregunta", use_container_width=True)
-                with col_q2:
-                    clear_history = st.form_submit_button("🗑️ Borrar Historial", use_container_width=True)
+                user_question = st.text_area("Escribe tu pregunta aquí:", placeholder="Ejemplo: ¿Cuáles son los puntos principales mencionados?", height=100)
+                col_q1, col_q2, _ = st.columns([2, 2, 1])
+                with col_q1: submit_question = st.form_submit_button("🚀 Enviar Pregunta", use_container_width=True)
+                with col_q2: clear_history = st.form_submit_button("🗑️ Borrar Historial", use_container_width=True)
             
             if submit_question and user_question.strip():
                 with st.spinner("🤔 Analizando la transcripción..."):
                     client = Groq(api_key=api_key)
-                    answer = answer_question(
-                        user_question, 
-                        st.session_state.transcription, 
-                        client,
-                        st.session_state.qa_history
-                    )
+                    answer = answer_question(user_question, st.session_state.transcription, client, st.session_state.qa_history)
                     st.session_state.qa_history.append({'question': user_question, 'answer': answer})
                     st.rerun()
-            
             if clear_history:
                 st.session_state.qa_history = []
                 st.rerun()
@@ -649,13 +654,9 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 st.markdown(type_badge)
                 col_q1, col_q2 = st.columns([0.12, 0.88])
                 with col_q1:
-                    ### <<< CAMBIO 5: Usar el callback on_click también en los botones de citas
-                    st.button(
-                        f"▶️ {quote['time']}", 
-                        key=f"quote_{idx}",
-                        on_click=set_audio_time,
-                        args=(int(quote['start']),)
-                    )
+                    if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
+                        set_audio_time(int(quote['start']))
+                        st.rerun()
                 with col_q2:
                     st.markdown(f"*{quote['text']}*")
                     if quote['full_context'] and quote['full_context'] != quote['text']:
@@ -668,7 +669,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 4: PERSONAS CLAVE =====
     if 'people' in st.session_state:
         with tabs[3]:
-            # ... (el código de esta pestaña no necesita cambios)
+            # ... (sin cambios) ...
             st.markdown("### 👥 Personas y Cargos Mencionados")
             people_data = st.session_state.people
             if people_data and not ("Error" in people_data[0]['name']):
@@ -696,6 +697,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.4.1 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.4.2</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p>
 </div>""", unsafe_allow_html=True)
