@@ -241,7 +241,7 @@ def generate_summary(transcription_text, client):
                 {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
                 {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto. Ve directo al contenido, sin introducciones. Mantén todas las tildes correctas:\n\n{transcription_text}"}
             ],
-            model="llama-3.3-70b-versatile", temperature=0.3, max_tokens=500
+            model="llama-3.1-70b-versatile", temperature=0.3, max_tokens=500
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
@@ -282,7 +282,7 @@ Responde basándote exclusivamente en la transcripción anterior."""
         
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.2,
             max_tokens=800
         )
@@ -328,7 +328,7 @@ def extract_people_and_roles(transcription_text, client):
                     """
                 }
             ],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.1,
             max_tokens=1024,
             response_format={"type": "json_object"}
@@ -539,15 +539,17 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         for ctx_seg in context_segments:
                             col_time, col_content = st.columns([0.15, 0.85])
                             
+                            # ##################################################################
+                            # ### INICIO DE LA MODIFICACIÓN ###
+                            # ##################################################################
                             with col_time:
-                                if ctx_seg['is_match']:
-                                    # Botón para ir al momento exacto
-                                    if st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}", use_container_width=True):
-                                        st.session_state.audio_start_time = int(ctx_seg['start'])
-                                        st.rerun()
-                                else:
-                                    # Solo mostrar timestamp sin botón
-                                    st.markdown(f"<div style='text-align: center; color: #666; font-size: 0.85rem; padding: 0.4rem;'>{ctx_seg['time']}</div>", unsafe_allow_html=True)
+                                # Siempre se crea un botón para cada línea (match o contexto)
+                                if st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}", use_container_width=True):
+                                    st.session_state.audio_start_time = int(ctx_seg['start'])
+                                    st.rerun()
+                            # ##################################################################
+                            # ### FIN DE LA MODIFICACIÓN ###
+                            # ##################################################################
                             
                             with col_content:
                                 if ctx_seg['is_match']:
