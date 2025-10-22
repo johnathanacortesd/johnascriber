@@ -55,14 +55,11 @@ st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="�
 # --- INICIALIZACIÓN DE ESTADO ---
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
-if 'audio_player_key' not in st.session_state:
-    st.session_state.audio_player_key = 0
 
-# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
+# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO (CORREGIDA) ---
 def set_audio_time(start_seconds):
     st.session_state.audio_start_time = int(start_seconds)
-    # Incrementamos la key para forzar que el componente st.audio se vuelva a renderizar completamente
-    st.session_state.audio_player_key += 1
+    # Ya no es necesario manipular una 'key' para el reproductor.
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -416,7 +413,6 @@ with col1:
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         st.session_state.audio_start_time = 0
-        st.session_state.audio_player_key = 0 # Reiniciar la key del reproductor también
         st.session_state.last_search = ""
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
@@ -491,21 +487,16 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     
-    # Reproducir audio con manejo de errores
+    # Reproducir audio con manejo de errores (CÓDIGO CORREGIDO)
     if st.session_state.uploaded_audio_bytes:
         try:
             st.audio(
                 st.session_state.uploaded_audio_bytes, 
-                start_time=int(st.session_state.audio_start_time),
-                key=f"audio_player_{st.session_state.audio_player_key}"
+                start_time=st.session_state.audio_start_time
+                # Se eliminó el argumento `key` que causaba el TypeError
             )
-            # Opcional: Información de depuración (comentar si no es necesario)
-            # st.write(f"Debug: audio_player_key={st.session_state.audio_player_key}, start_time={st.session_state.audio_start_time}")
-        except TypeError as e:
-            st.error(f"Error en st.audio: {str(e)}")
-            st.write(f"Debug: audio_player_key={st.session_state.audio_player_key}, start_time={st.session_state.audio_start_time}")
         except Exception as e:
-            st.error(f"Error inesperado en st.audio: {str(e)}")
+            st.error(f"Error inesperado al intentar reproducir el audio: {str(e)}")
     else:
         st.warning("⚠️ No hay archivo de audio disponible para reproducir.")
     
@@ -560,7 +551,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                                     f"▶️ {ctx_seg['time']}", 
                                     key=f"play_ctx_{result_num}_{ctx_seg['start']}", 
                                     on_click=set_audio_time,
-                                    args=(int(ctx_seg['start']),), # Pasamos el tiempo como argumento
+                                    args=(ctx_seg['start'],), # Pasamos el tiempo como argumento
                                     use_container_width=True
                                 )
                             
@@ -664,7 +655,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         f"▶️ {quote['time']}", 
                         key=f"quote_{idx}",
                         on_click=set_audio_time,
-                        args=(int(quote['start']),)
+                        args=(quote['start'],)
                     )
                 with col_q2:
                     st.markdown(f"*{quote['text']}*")
@@ -697,7 +688,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "quotes", "last_search", "search_counter", "people", "qa_history", "audio_player_key"]
+                        "summary", "quotes", "last_search", "search_counter", "people", "qa_history"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
@@ -705,6 +696,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.4.1 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.4.2 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p>
 </div>""", unsafe_allow_html=True)
