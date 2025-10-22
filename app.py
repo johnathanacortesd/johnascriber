@@ -65,10 +65,7 @@ except KeyError:
 # --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS (AMPLIADO) ---
 
 SPANISH_WORD_CORRECTIONS = {
-    # Corrección de "Sí" confundido con "S"
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
-    
-    # Preguntas comunes
     r'\bqu\s+se\b': 'qué se',
     r'\bqu\s+es\b': 'qué es',
     r'\bqu\s+fue\b': 'qué fue',
@@ -77,8 +74,6 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bqu\s+pasa\b': 'qué pasa',
     r'\bPor\s+qu(?!\s+[eé])\b': 'Por qué',
     r'\bpor\s+qu(?!\s+[eé])\b': 'por qué',
-    
-    # Palabras comunes cortadas (con lookahead para evitar sobre-corrección)
     r'\bfundaci(?=\s|$)': 'fundación', 'Fundaci(?=\s|$)': 'Fundación',
     r'\binformaci(?=\s|$)': 'información', 'Informaci(?=\s|$)': 'Información',
     r'\bsituaci(?=\s|$)': 'situación', 'Situaci(?=\s|$)': 'Situación',
@@ -99,15 +94,11 @@ SPANISH_WORD_CORRECTIONS = {
     r'\brelaci(?=\s|$)': 'relación', 'Relaci(?=\s|$)': 'Relación',
     r'\badministraci(?=\s|$)': 'administración', 'Administraci(?=\s|$)': 'Administración',
     r'\bimplementaci(?=\s|$)': 'implementación', 'Implementaci(?=\s|$)': 'Implementación',
-    
-    # Palabras terminadas en -ía
     r'\bpoli(?=\s|$)': 'política', 'Poli(?=\s|$)': 'Política',
     r'\bcompa(?=\s|$)': 'compañía', 'Compa(?=\s|$)': 'Compañía',
     r'\beconom(?=\s|$)': 'economía', 'Econom(?=\s|$)': 'Economía',
     r'\benergi(?=\s|$)': 'energía', 'Energi(?=\s|$)': 'Energía',
     r'\bgeograf(?=\s|$)': 'geografía', 'Geograf(?=\s|$)': 'Geografía',
-    
-    # Otras palabras comunes
     r'\bpai(?=\s|$)': 'país', 'Pai(?=\s|$)': 'País',
     r'\bda(?=\s|$)': 'día', 'Da(?=\s|$)': 'Día',
     r'\bmiérco(?=\s|$)': 'miércoles', 'Miérco(?=\s|$)': 'Miércoles',
@@ -158,27 +149,21 @@ def format_transcription_with_timestamps(data):
     ]
     return "\n".join(lines)
 
-# --- FUNCIÓN MEJORADA: POST-PROCESAMIENTO PARA TILDES Y PALABRAS CORTADAS ---
-
 def fix_spanish_encoding(text):
     if not text:
         return text
     
     result = text
     
-    # PASO 1: Corregir problemas de encoding UTF-8 (si los hubiera)
     encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
 
-    # PASO 2: Aplicar todas las correcciones del diccionario
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
         result = re.sub(pattern, replacement, result)
 
-    # PASO 3: Limpieza de artefactos y duplicaciones comunes
     result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result, flags=re.IGNORECASE)
     
-    # PASO 4: Corrección de mayúsculas al inicio de la frase después de un punto.
     result = re.sub(r'(?<=\.\s)([a-z])', lambda m: m.group(1).upper(), result)
 
     return result.strip()
@@ -192,8 +177,6 @@ def check_transcription_quality(text):
     if re.search(r'\b(qu|sostenib|fundaci|informaci)\s', text, re.IGNORECASE):
         issues.append("ℹ️ Se aplicaron correcciones automáticas de tildes y palabras cortadas.")
     return issues
-
-# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
 
 def convert_video_to_audio(video_bytes, video_filename):
     try:
@@ -232,8 +215,6 @@ def compress_audio(audio_bytes, original_filename):
 def get_file_size_mb(file_bytes):
     return len(file_bytes) / (1024 * 1024)
 
-# --- FUNCIONES DE ANÁLISIS ---
-
 def generate_summary(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
@@ -241,16 +222,14 @@ def generate_summary(transcription_text, client):
                 {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
                 {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto. Ve directo al contenido, sin introducciones. Mantén todas las tildes correctas:\n\n{transcription_text}"}
             ],
-            model="llama-3.1-70b-versatile", temperature=0.3, max_tokens=500
+            model="llama-3.3-70b-versatile", temperature=0.3, max_tokens=500
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Error al generar resumen: {str(e)}"
 
 def answer_question(question, transcription_text, client, conversation_history):
-    """Responde preguntas sobre la transcripción usando el contexto completo y el historial de conversación."""
     try:
-        # Construir el contexto con el historial de conversación
         messages = [
             {"role": "system", "content": """Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción proporcionada de manera precisa, concisa y profesional. 
             
@@ -262,12 +241,10 @@ Reglas importantes:
 - Si te hacen una pregunta de seguimiento, considera el contexto de la conversación anterior"""}
         ]
         
-        # Agregar historial de conversación
         for qa in conversation_history:
             messages.append({"role": "user", "content": qa["question"]})
             messages.append({"role": "assistant", "content": qa["answer"]})
         
-        # Agregar la pregunta actual con el contexto de la transcripción
         messages.append({
             "role": "user", 
             "content": f"""Transcripción completa del audio:
@@ -282,7 +259,7 @@ Responde basándote exclusivamente en la transcripción anterior."""
         
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",
             temperature=0.2,
             max_tokens=800
         )
@@ -307,7 +284,6 @@ def extract_quotes(segments):
     return quotes[:10]
 
 def extract_people_and_roles(transcription_text, client):
-    """Extrae nombres de personas y sus cargos usando Groq LLaMA."""
     try:
         chat_completion = client.chat.completions.create(
             messages=[
@@ -328,7 +304,7 @@ def extract_people_and_roles(transcription_text, client):
                     """
                 }
             ],
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",
             temperature=0.1,
             max_tokens=1024,
             response_format={"type": "json_object"}
@@ -336,7 +312,6 @@ def extract_people_and_roles(transcription_text, client):
         response_content = chat_completion.choices[0].message.content
         data = json.loads(response_content)
         
-        # Buscar la lista de personas, sin importar la clave principal
         for key in data:
             if isinstance(data[key], list):
                 return data[key]
@@ -348,7 +323,6 @@ def extract_people_and_roles(transcription_text, client):
         return [{"name": "Error de API", "role": str(e), "context": "Ocurrió un error al contactar con el servicio de análisis."}]
 
 def get_extended_context(segments, match_index, context_range=2):
-    """Obtiene contexto extendido alrededor de un segmento encontrado."""
     start_idx = max(0, match_index - context_range)
     end_idx = min(len(segments), match_index + context_range + 1)
     
@@ -418,7 +392,7 @@ with col2:
         st.session_state.audio_start_time = 0
         st.session_state.last_search = ""
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
-        st.session_state.qa_history = []  # Reiniciar historial de preguntas
+        st.session_state.qa_history = []
         
         with st.spinner("🔄 Procesando archivo..."):
             try:
@@ -489,7 +463,9 @@ with col2:
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
-    st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
+    
+    # Contenedor principal para el reproductor
+    st.audio(st.session_state.uploaded_audio_bytes, start_time=int(st.session_state.audio_start_time))
     
     # PESTAÑAS PRINCIPALES
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
@@ -501,8 +477,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 1: TRANSCRIPCIÓN MEJORADA =====
     with tabs[0]:
         HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
-        MATCH_LINE_STYLE = "background-color: #1e3a5f; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311; color: #ffffff; font-size: 1rem; line-height: 1.6;"
-        CONTEXT_LINE_STYLE = "background-color: #1a1a1a; padding: 0.6rem; border-radius: 4px; color: #b8b8b8; font-size: 0.92rem; line-height: 1.5; border-left: 2px solid #404040;"
         TRANSCRIPTION_BOX_STYLE = "background-color: #0E1117; color: #FAFAFA; border: 1px solid #333; border-radius: 10px; padding: 1.5rem; max-height: 500px; overflow-y: auto; font-family: 'Source Code Pro', monospace; line-height: 1.7; white-space: pre-wrap; font-size: 0.95rem;"
 
         col_search1, col_search2 = st.columns([4, 1])
@@ -539,26 +513,24 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         for ctx_seg in context_segments:
                             col_time, col_content = st.columns([0.15, 0.85])
                             
-                            # ##################################################################
-                            # ### INICIO DE LA MODIFICACIÓN ###
-                            # ##################################################################
                             with col_time:
-                                # Siempre se crea un botón para cada línea (match o contexto)
-                                if st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}", use_container_width=True):
-                                    st.session_state.audio_start_time = int(ctx_seg['start'])
-                                    st.rerun()
-                            # ##################################################################
-                            # ### FIN DE LA MODIFICACIÓN ###
-                            # ##################################################################
+                                if ctx_seg['is_match']:
+                                    # Botón para ir al momento exacto
+                                    if st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}", use_container_width=True):
+                                        st.session_state.audio_start_time = int(ctx_seg['start'])
+                                        st.rerun()
+                                else:
+                                    # Solo mostrar timestamp sin botón
+                                    st.markdown(f"<div style='text-align: center; color: #666; font-size: 0.85rem; padding: 0.4rem;'>{ctx_seg['time']}</div>", unsafe_allow_html=True)
                             
                             with col_content:
                                 if ctx_seg['is_match']:
-                                    # Resaltar la línea que contiene la búsqueda con mejor visibilidad
+                                    # Resaltar la línea que contiene la búsqueda
                                     highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', ctx_seg['text'])
-                                    st.markdown(f"<div style='{MATCH_LINE_STYLE}'><strong>🎯 </strong>{highlighted_text}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='background-color: #1a1a1a; padding: 0.7rem; border-radius: 5px; border-left: 4px solid #fca311;'>{highlighted_text}</div>", unsafe_allow_html=True)
                                 else:
-                                    # Mostrar contexto con estilo mejorado
-                                    st.markdown(f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
+                                    # Mostrar contexto con estilo diferente
+                                    st.markdown(f"<div style='color: #999; padding: 0.5rem; font-size: 0.9rem;'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
                         
                         if result_num < len(matching_indices):
                             st.markdown("---")
@@ -700,6 +672,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.4</strong> - Desarrollado por Johnathan Cortés 🤖</p>
-<p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.5</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, reproducción sincronizada y Q&A interactivo en español</p>
 </div>""", unsafe_allow_html=True)
