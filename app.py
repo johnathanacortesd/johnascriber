@@ -147,7 +147,7 @@ def compress_audio(audio_bytes, original_filename):
 def get_file_size_mb(file_bytes):
     return len(file_bytes) / (1024 * 1024)
 
-# --- FUNCIONES DE ANÁLISIS (ACTUALIZADAS Y CORREGIDAS) ---
+# --- FUNCIONES DE ANÁLISIS (ACTUALIZADAS AL MODELO 8B-INSTANT) ---
 
 def generate_summary(transcription_text, client):
     try:
@@ -156,9 +156,9 @@ def generate_summary(transcription_text, client):
                 {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
                 {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto. Ve directo al contenido, sin introducciones. Mantén todas las tildes correctas:\n\n{transcription_text}"}
             ],
-            model="llama-3.1-70b-versatile", 
+            model="llama-3.1-8b-instant", 
             temperature=0.3, 
-            max_tokens=500  # Parámetro corregido
+            max_tokens=500
         )
         return chat_completion.choices[0].message.content
     except Exception as e: return f"Error al generar resumen: {str(e)}"
@@ -172,9 +172,9 @@ def answer_question(question, transcription_text, client, conversation_history):
         messages.append({"role": "user", "content": f"Transcripción completa del audio:\n---\n{transcription_text}\n---\nPregunta: {question}\nResponde basándote exclusivamente en la transcripción anterior."})
         chat_completion = client.chat.completions.create(
             messages=messages, 
-            model="llama-3.1-70b-versatile", 
+            model="llama-3.1-8b-instant", 
             temperature=0.2, 
-            max_tokens=800  # Parámetro corregido
+            max_tokens=800
         )
         return chat_completion.choices[0].message.content
     except Exception as e: return f"Error al procesar la pregunta: {str(e)}"
@@ -198,9 +198,9 @@ def extract_people_and_roles(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
             messages=[{"role": "system", "content": 'Eres un analista experto en transcripciones de noticias. Tu tarea es identificar a todas las personas mencionadas por su nombre y, si se especifica, su cargo o rol. Debes devolver la información en formato JSON. El JSON debe ser una lista de objetos. Cada objeto debe tener tres claves: "name", "role" y "context".\n- "name": El nombre completo de la persona.\n- "role": El cargo o rol asociado (ej: "Presidente", "Director de la Fundación", "Analista"). Si no se menciona un rol, usa el valor "No especificado".\n- "context": La frase exacta de la transcripción donde se menciona a la persona y su rol.\nAsegúrate de que el JSON esté bien formado.'}, {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:\n\n{transcription_text}"}],
-            model="llama-3.1-70b-versatile", 
+            model="llama-3.1-8b-instant", 
             temperature=0.1, 
-            max_tokens=1024,  # Parámetro corregido
+            max_tokens=1024,
             response_format={"type": "json_object"}
         )
         response_content = chat_completion.choices[0].message.content
@@ -369,4 +369,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.4.5 (Parámetro API Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.4.6 (Modelo 8b-Instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
