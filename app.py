@@ -7,7 +7,7 @@ import re
 import streamlit.components.v1 as components
 from datetime import timedelta
 from collections import Counter
-import io  # <<< CAMBIO IMPORTANTE: Importar el módulo io
+import io
 
 # Importar para conversión de audio
 try:
@@ -59,9 +59,8 @@ if 'audio_start_time' not in st.session_state:
 if 'audio_player_key' not in st.session_state:
     st.session_state.audio_player_key = "audio_player_0"
 
-# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
+# --- FUNCIÓN PARA CAMBIAR EL TIEMPO DEL AUDIO ---
 def set_audio_time(start_seconds):
-    """Actualiza el tiempo de inicio y la clave del reproductor para forzar el reinicio."""
     st.session_state.audio_start_time = start_seconds
     current_key_index = int(st.session_state.audio_player_key.split("_")[-1])
     st.session_state.audio_player_key = f"audio_player_{current_key_index + 1}"
@@ -73,7 +72,7 @@ except KeyError:
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS ---
+# --- DICCIONARIO DE CORRECCIONES ---
 SPANISH_WORD_CORRECTIONS = {
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1', r'\bqu\s+se\b': 'qué se', r'\bqu\s+es\b': 'qué es',
     r'\bqu\s+fue\b': 'qué fue', r'\bqu\s+hay\b': 'qué hay', r'\bqu\s+significa\b': 'qué significa',
@@ -214,8 +213,19 @@ def extract_people_and_roles(text, client):
     except (json.JSONDecodeError, Exception) as e: return [{"name": "Error de Análisis", "role": str(e), "context": "No se pudo procesar la respuesta de la IA."}]
 
 def get_extended_context(segments, idx, context_range=2):
-    start, end = max(0, idx - context_range), min(len(segments), idx + context_range + 1)
-    return [{'text': s['text'].strip(), 'time': format_timestamp(s['start']), 'start': s['start'], 'is_match': i == idx} for i, s in enumerate(segments[start:end], start=start)]
+    start = max(0, idx - context_range)
+    end = min(len(segments), idx + context_range + 1)
+    
+    context_list = []
+    for i in range(start, end):
+        seg = segments[i]
+        context_list.append({
+            'text': seg['text'].strip(), 
+            'time': format_timestamp(seg['start']), 
+            'start': seg['start'], 
+            'is_match': i == idx
+        })
+    return context_list
 
 def export_to_srt(data):
     content = []
@@ -231,60 +241,103 @@ def export_to_srt(data):
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
-    st.header("⚙️ Configuración"); model_option = st.selectbox("Modelo", ["whisper-large-v3"]); language = st.selectbox("Idioma", ["es"]); temperature = st.slider("Temperatura", 0.0, 1.0, 0.0, 0.1)
-    st.markdown("---"); st.subheader("🎯 Análisis Inteligente"); enable_tilde_fix = st.checkbox("✨ Corregir tildes", value=True); enable_summary = st.checkbox("📝 Generar resumen", value=True); enable_quotes = st.checkbox("💬 Identificar citas", value=True); enable_people = st.checkbox("👤 Extraer personas", value=True)
-    st.markdown("---"); st.subheader("🔍 Búsqueda"); context_lines = st.slider("Líneas de contexto", 1, 5, 2)
-    st.markdown("---"); st.subheader("🔧 Audio");
-    if MOVIEPY_AVAILABLE: st.info("MP4 > 25 MB se convertirán a audio."); compress_audio_option = st.checkbox("📦 Comprimir audio", value=False)
-    else: st.warning("MoviePy no disponible."); compress_audio_option = False
-    st.markdown("---"); st.info("Formatos: MP3, MP4, WAV, etc."); st.success("API Key configurada")
+    st.header("⚙️ Configuración")
+    model_option = st.selectbox("Modelo", ["whisper-large-v3"])
+    language = st.selectbox("Idioma", ["es"])
+    temperature = st.slider("Temperatura", 0.0, 1.0, 0.0, 0.1)
+    
+    st.markdown("---")
+    st.subheader("🎯 Análisis Inteligente")
+    enable_tilde_fix = st.checkbox("✨ Corregir tildes", value=True)
+    enable_summary = st.checkbox("📝 Generar resumen", value=True)
+    enable_quotes = st.checkbox("💬 Identificar citas", value=True)
+    enable_people = st.checkbox("👤 Extraer personas", value=True)
+
+    st.markdown("---")
+    st.subheader("🔍 Búsqueda")
+    context_lines = st.slider("Líneas de contexto", 1, 5, 2)
+    
+    st.markdown("---")
+    st.subheader("🔧 Audio")
+    if MOVIEPY_AVAILABLE:
+        st.info("MP4 > 25 MB se convertirán a audio.")
+        compress_audio_option = st.checkbox("📦 Comprimir audio", value=False)
+    else:
+        st.warning("MoviePy no disponible.")
+        compress_audio_option = False
+    
+    st.markdown("---")
+    st.info("Formatos: MP3, MP4, WAV, etc.")
+    st.success("API Key configurada")
 
 st.subheader("📤 Sube tu archivo")
 col1, col2 = st.columns([3, 1])
-with col1: uploaded_file = st.file_uploader("Selecciona", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
+with col1:
+    uploaded_file = st.file_uploader("Selecciona", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Transcribir", type="primary", use_container_width=True, disabled=not uploaded_file):
-        st.session_state.audio_start_time = 0; st.session_state.audio_player_key = "audio_player_0"
-        st.session_state.last_search = ""; st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
+        st.session_state.audio_start_time = 0
+        st.session_state.audio_player_key = "audio_player_0"
+        st.session_state.last_search = ""
+        st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
         with st.spinner("🔄 Procesando archivo..."):
             try:
                 file_bytes = uploaded_file.getvalue()
                 if os.path.splitext(uploaded_file.name)[1].lower() in ['.mp4', '.mpeg', '.webm'] and MOVIEPY_AVAILABLE and get_file_size_mb(file_bytes) > 25:
-                    with st.spinner("🎬 Convirtiendo video a audio..."): file_bytes, _ = convert_video_to_audio(file_bytes, uploaded_file.name)
+                    with st.spinner("🎬 Convirtiendo video a audio..."):
+                        file_bytes, _ = convert_video_to_audio(file_bytes, uploaded_file.name)
                 if MOVIEPY_AVAILABLE and compress_audio_option:
-                    with st.spinner("📦 Comprimiendo audio..."): file_bytes = compress_audio(file_bytes, uploaded_file.name)
+                    with st.spinner("📦 Comprimiendo audio..."):
+                        file_bytes = compress_audio(file_bytes, uploaded_file.name)
                 st.session_state.uploaded_audio_bytes = file_bytes
+                
                 client = Groq(api_key=api_key)
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp: tmp.write(file_bytes); tmp_path = tmp.name
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
+                    tmp.write(file_bytes)
+                    tmp_path = tmp.name
+                
                 with st.spinner("🔄 Transcribiendo con IA..."):
                     with open(tmp_path, "rb") as audio_file:
                         prompt = "Transcribe en español, prestando atención a acentos y palabras completas: qué, por qué, sí, fundación, información, situación, etc."
                         transcription = client.audio.transcriptions.create(file=(uploaded_file.name, audio_file.read()), model=model_option, temperature=temperature, language=language, response_format="verbose_json", prompt=prompt if language == "es" else None)
                 os.unlink(tmp_path)
+                
                 text = transcription.text
                 if enable_tilde_fix and language == "es":
                     with st.spinner("✨ Aplicando correcciones..."):
                         text = fix_spanish_encoding(text)
-                        for seg in transcription.segments: seg['text'] = fix_spanish_encoding(seg['text'])
-                        for issue in check_transcription_quality(text): st.info(issue)
-                st.session_state.transcription = text; st.session_state.transcription_data = transcription
+                        for seg in transcription.segments:
+                            seg['text'] = fix_spanish_encoding(seg['text'])
+                        for issue in check_transcription_quality(text):
+                            st.info(issue)
+                
+                st.session_state.transcription = text
+                st.session_state.transcription_data = transcription
+                
                 with st.spinner("🧠 Generando análisis..."):
                     if enable_summary: st.session_state.summary = generate_summary(text, client)
                     if enable_quotes: st.session_state.quotes = extract_quotes(transcription.segments)
                     if enable_people: st.session_state.people = extract_people_and_roles(text, client)
-                st.success("✅ ¡Análisis completado!"); st.balloons()
-            except Exception as e: st.error(f"❌ Error: {e}")
+                
+                st.success("✅ ¡Análisis completado!")
+                st.balloons()
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
 
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
-    st.markdown("---"); st.subheader("🎧 Reproduce y Analiza")
+    st.markdown("---")
+    st.subheader("🎧 Reproduce y Analiza")
     
-    # <<< CAMBIO IMPORTANTE: Envolver los bytes del audio en io.BytesIO()
     st.audio(io.BytesIO(st.session_state.uploaded_audio_bytes), 
              start_time=st.session_state.audio_start_time,
              key=st.session_state.audio_player_key)
     
-    tabs = st.tabs(["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas", "👥 Personas"] if 'people' in st.session_state else ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas"])
+    tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas"]
+    if 'people' in st.session_state:
+        tab_titles.append("👥 Personas")
+    
+    tabs = st.tabs(tab_titles)
     
     with tabs[0]:
         st.markdown(f"""
@@ -296,34 +349,54 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         </style>""", unsafe_allow_html=True)
 
         col_s1, col_s2 = st.columns([4, 1])
-        with col_s1: search_query = st.text_input("🔎 Buscar:", value=st.session_state.get('last_search', ''), key=f"search_input_{st.session_state.get('search_counter', 0)}"); st.session_state.last_search = search_query
-        with col_s2: st.write("");
-            if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query): st.session_state.last_search = ""; st.session_state.search_counter += 1; st.rerun()
+        with col_s1:
+            search_query = st.text_input("🔎 Buscar:", value=st.session_state.get('last_search', ''), key=f"search_input_{st.session_state.get('search_counter', 0)}")
+            st.session_state.last_search = search_query
+        with col_s2:
+            st.write("")
+            # Línea corregida con indentación estándar
+            if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query):
+                st.session_state.last_search = ""
+                st.session_state.search_counter += 1
+                st.rerun()
         
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
                 segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
                 matches = [i for i, s in enumerate(segments) if pattern.search(s['text'])]
-                if not matches: st.info("❌ No se encontraron coincidencias.")
+                
+                if not matches:
+                    st.info("❌ No se encontraron coincidencias.")
                 else:
                     st.success(f"✅ {len(matches)} coincidencia(s) encontrada(s)")
                     for i, match_idx in enumerate(matches, 1):
-                        st.markdown(f"### 🎯 Resultado {i}"); ctx_segments = get_extended_context(segments, match_idx, context_lines)
+                        st.markdown(f"### 🎯 Resultado {i}")
+                        ctx_segments = get_extended_context(segments, match_idx, context_lines)
                         for seg in ctx_segments:
                             col_t, col_c = st.columns([0.15, 0.85])
                             with col_t:
-                                if st.button(f"▶️ {seg['time']}", key=f"play_ctx_{i}_{seg['start']}", use_container_width=True): set_audio_time(int(seg['start'])); st.rerun()
+                                if st.button(f"▶️ {seg['time']}", key=f"play_ctx_{i}_{seg['start']}", use_container_width=True):
+                                    set_audio_time(int(seg['start']))
+                                    st.rerun()
                             with col_c:
-                                if seg['is_match']: st.markdown(f"<div class='match-line'><strong>🎯 </strong>{pattern.sub(lambda m: f'<span style=\"background-color:#fca311;color:#14213d;padding:2px 4px;border-radius:4px;\">{m.group(0)}</span>', seg['text'])}</div>", unsafe_allow_html=True)
-                                else: st.markdown(f"<div class='context-line'>{seg['text']}</div>", unsafe_allow_html=True)
-                        if i < len(matches): st.markdown("---")
+                                highlight_html = f'<span style="background-color:#fca311;color:#14213d;padding:2px 4px;border-radius:4px;">\\g<0></span>'
+                                if seg['is_match']:
+                                    highlighted_text = pattern.sub(highlight_html, seg['text'])
+                                    st.markdown(f"<div class='match-line'><strong>🎯 </strong>{highlighted_text}</div>", unsafe_allow_html=True)
+                                else:
+                                    st.markdown(f"<div class='context-line'>{seg['text']}</div>", unsafe_allow_html=True)
+                        if i < len(matches):
+                            st.markdown("---")
         
         st.markdown("**📄 Transcripción completa:**")
         html = st.session_state.transcription.replace('\n', '<br>')
-        if search_query: html = re.compile(re.escape(search_query), re.IGNORECASE).sub(lambda m: f'<span style="background-color:#fca311;color:#14213d;padding:2px 4px;border-radius:4px;">{m.group(0)}</span>', html)
+        if search_query:
+            highlight_html = f'<span style="background-color:#fca311;color:#14213d;padding:2px 4px;border-radius:4px;">\\g<0></span>'
+            html = re.compile(re.escape(search_query), re.IGNORECASE).sub(highlight_html, html)
         st.markdown(f"<div style='background-color:#0E1117;color:#FAFAFA;border:1px solid #333;border-radius:10px;padding:1.5rem;max-height:500px;overflow-y:auto;font-family:monospace;line-height:1.7;'>{html}</div>", unsafe_allow_html=True)
         st.write("")
+        
         c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
         with c1: st.download_button("💾 TXT Simple", st.session_state.transcription.encode('utf-8'), "transcripcion.txt", use_container_width=True)
         with c2: st.download_button("💾 TXT+Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data).encode('utf-8'), "transcripcion_tiempos.txt", use_container_width=True)
@@ -332,39 +405,59 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
     with tabs[1]:
         if 'summary' in st.session_state:
-            st.markdown("### 📝 Resumen Ejecutivo"); st.markdown(st.session_state.summary); st.write("")
-            cs1, cs2 = st.columns([3, 1]);
+            st.markdown("### 📝 Resumen Ejecutivo")
+            st.markdown(st.session_state.summary)
+            st.write("")
+            cs1, cs2 = st.columns([3, 1])
             with cs1: st.download_button("💾 Descargar", st.session_state.summary.encode('utf-8'), "resumen.txt", use_container_width=True)
             with cs2: create_copy_button(st.session_state.summary)
-            st.markdown("---"); st.markdown("### 💭 Haz preguntas");
+            
+            st.markdown("---")
+            st.markdown("### 💭 Haz preguntas")
             if 'qa_history' not in st.session_state: st.session_state.qa_history = []
+            
             if st.session_state.qa_history:
-                st.markdown("#### 📚 Historial");
-                for i, qa in enumerate(st.session_state.qa_history): st.markdown(f"**🙋 P{i+1}:** {qa['question']}\n\n**🤖 R:** {qa['answer']}\n\n---")
+                st.markdown("#### 📚 Historial")
+                for i, qa in enumerate(st.session_state.qa_history):
+                    st.markdown(f"**🙋 P{i+1}:** {qa['question']}\n\n**🤖 R:** {qa['answer']}\n\n---")
+            
             with st.form("q_form", clear_on_submit=True):
-                q = st.text_area("Escribe tu pregunta:", height=100); cq1, cq2, _ = st.columns([2, 2, 1])
+                q = st.text_area("Escribe tu pregunta:", height=100)
+                cq1, cq2, _ = st.columns([2, 2, 1])
                 with cq1: submit_q = st.form_submit_button("🚀 Enviar", use_container_width=True)
                 with cq2: clear_h = st.form_submit_button("🗑️ Borrar Historial", use_container_width=True)
+            
             if submit_q and q.strip():
                 with st.spinner("🤔 Analizando..."):
-                    a = answer_question(q, st.session_state.transcription, Groq(api_key=api_key), st.session_state.qa_history)
-                    st.session_state.qa_history.append({'question': q, 'answer': a}); st.rerun()
-            if clear_h: st.session_state.qa_history = []; st.rerun()
-        else: st.info("📝 Resumen no generado. Actívalo y vuelve a transcribir.")
+                    client = Groq(api_key=api_key)
+                    answer = answer_question(q, st.session_state.transcription, client, st.session_state.qa_history)
+                    st.session_state.qa_history.append({'question': q, 'answer': answer})
+                    st.rerun()
+            if clear_h:
+                st.session_state.qa_history = []
+                st.rerun()
+        else:
+            st.info("📝 Resumen no generado. Actívalo y vuelve a transcribir.")
 
     with tabs[2]:
         if 'quotes' in st.session_state and st.session_state.quotes:
-            st.markdown("### 💬 Citas y Declaraciones"); st.caption(f"{len(st.session_state.quotes)} citas/declaraciones encontradas.")
+            st.markdown("### 💬 Citas y Declaraciones")
+            st.caption(f"{len(st.session_state.quotes)} citas/declaraciones encontradas.")
             for i, q in enumerate(st.session_state.quotes):
                 st.markdown("🗣️ **Cita Textual**" if q['type'] == 'quote' else "📢 **Declaración**")
                 c_q1, c_q2 = st.columns([0.12, 0.88])
                 with c_q1:
-                    if st.button(f"▶️ {q['time']}", key=f"q_{i}"): set_audio_time(int(q['start'])); st.rerun()
-                with c_q2: st.markdown(f"*{q['text']}*");
+                    if st.button(f"▶️ {q['time']}", key=f"q_{i}"):
+                        set_audio_time(int(q['start']))
+                        st.rerun()
+                with c_q2:
+                    st.markdown(f"*{q['text']}*")
                     if q['full_context'] != q['text']:
-                        with st.expander("📄 Ver contexto"): st.markdown(q['full_context'])
+                        with st.expander("📄 Ver contexto"):
+                            st.markdown(q['full_context'])
                 st.markdown("---")
-        else: st.info("💬 No se identificaron citas relevantes.")
+        else:
+            st.info("💬 No se identificaron citas relevantes.")
 
     if 'people' in st.session_state:
         with tabs[3]:
@@ -374,16 +467,21 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 st.caption(f"{len(people)} personas clave identificadas.")
                 for p in people:
                     st.markdown(f"**👤 {p['name']}**\n\n&nbsp;&nbsp;&nbsp;&nbsp;*Rol:* {p.get('role', 'No especificado')}")
-                    with st.expander("📝 Ver contexto"): st.markdown(f"> {p.get('context', 'N/A')}")
-            elif people: st.error(f"**{people[0]['name']}**: {people[0]['role']}\n\nContexto: {people[0]['context']}")
-            else: st.info("👤 No se identificaron personas específicas.")
+                    with st.expander("📝 Ver contexto"):
+                        st.markdown(f"> {p.get('context', 'N/A')}")
+            elif people:
+                st.error(f"**{people[0]['name']}**: {people[0]['role']}")
+                st.info(f"Contexto: {people[0]['context']}")
+            else:
+                st.info("👤 No se identificaron personas específicas.")
 
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
-        keys = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time", "summary", "quotes", "last_search", "search_counter", "people", "qa_history", "audio_player_key"]
-        for k in keys:
-            if k in st.session_state: del st.session_state[k]
+        keys_to_clear = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time", "summary", "quotes", "last_search", "search_counter", "people", "qa_history", "audio_player_key"]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
         st.rerun()
 
 st.markdown("---")
-st.markdown("<div style='text-align:center;color:#666;'><p><strong>Transcriptor Pro - v2.4.3</strong> - por Johnathan Cortés 🤖</p></div>", unsafe_allow_html=True)
+st.markdown("<div style='text-align:center;color:#666;'><p><strong>Transcriptor Pro - v2.4.4</strong> - por Johnathan Cortés 🤖</p></div>", unsafe_allow_html=True)
