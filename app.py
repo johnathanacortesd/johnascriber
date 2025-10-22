@@ -52,8 +52,17 @@ if not st.session_state.password_correct:
 
 st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="🎙️", layout="wide")
 
+# --- INICIALIZACIÓN DE ESTADO ---
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
+if 'audio_player_key' not in st.session_state: ### <<< CAMBIO 1: Inicializar la key del reproductor
+    st.session_state.audio_player_key = 0
+
+# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO --- ### <<< CAMBIO 2: Crear la función callback
+def set_audio_time(start_seconds):
+    st.session_state.audio_start_time = start_seconds
+    # Incrementamos la key para forzar que el componente st.audio se vuelva a renderizar completamente
+    st.session_state.audio_player_key += 1
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -65,7 +74,10 @@ except KeyError:
 # --- DICCIONARIO COMPLETO DE CORRECCIONES ESPAÑOLAS (AMPLIADO) ---
 
 SPANISH_WORD_CORRECTIONS = {
+    # Corrección de "Sí" confundido con "S"
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
+    
+    # Preguntas comunes
     r'\bqu\s+se\b': 'qué se',
     r'\bqu\s+es\b': 'qué es',
     r'\bqu\s+fue\b': 'qué fue',
@@ -74,6 +86,8 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bqu\s+pasa\b': 'qué pasa',
     r'\bPor\s+qu(?!\s+[eé])\b': 'Por qué',
     r'\bpor\s+qu(?!\s+[eé])\b': 'por qué',
+    
+    # Palabras comunes cortadas (con lookahead para evitar sobre-corrección)
     r'\bfundaci(?=\s|$)': 'fundación', 'Fundaci(?=\s|$)': 'Fundación',
     r'\binformaci(?=\s|$)': 'información', 'Informaci(?=\s|$)': 'Información',
     r'\bsituaci(?=\s|$)': 'situación', 'Situaci(?=\s|$)': 'Situación',
@@ -94,11 +108,15 @@ SPANISH_WORD_CORRECTIONS = {
     r'\brelaci(?=\s|$)': 'relación', 'Relaci(?=\s|$)': 'Relación',
     r'\badministraci(?=\s|$)': 'administración', 'Administraci(?=\s|$)': 'Administración',
     r'\bimplementaci(?=\s|$)': 'implementación', 'Implementaci(?=\s|$)': 'Implementación',
+    
+    # Palabras terminadas en -ía
     r'\bpoli(?=\s|$)': 'política', 'Poli(?=\s|$)': 'Política',
     r'\bcompa(?=\s|$)': 'compañía', 'Compa(?=\s|$)': 'Compañía',
     r'\beconom(?=\s|$)': 'economía', 'Econom(?=\s|$)': 'Economía',
     r'\benergi(?=\s|$)': 'energía', 'Energi(?=\s|$)': 'Energía',
     r'\bgeograf(?=\s|$)': 'geografía', 'Geograf(?=\s|$)': 'Geografía',
+    
+    # Otras palabras comunes
     r'\bpai(?=\s|$)': 'país', 'Pai(?=\s|$)': 'País',
     r'\bda(?=\s|$)': 'día', 'Da(?=\s|$)': 'Día',
     r'\bmiérco(?=\s|$)': 'miércoles', 'Miérco(?=\s|$)': 'Miércoles',
@@ -149,21 +167,27 @@ def format_transcription_with_timestamps(data):
     ]
     return "\n".join(lines)
 
+# --- FUNCIÓN MEJORADA: POST-PROCESAMIENTO PARA TILDES Y PALABRAS CORTADAS ---
+
 def fix_spanish_encoding(text):
     if not text:
         return text
     
     result = text
     
+    # PASO 1: Corregir problemas de encoding UTF-8 (si los hubiera)
     encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
 
+    # PASO 2: Aplicar todas las correcciones del diccionario
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
         result = re.sub(pattern, replacement, result)
 
+    # PASO 3: Limpieza de artefactos y duplicaciones comunes
     result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result, flags=re.IGNORECASE)
     
+    # PASO 4: Corrección de mayúsculas al inicio de la frase después de un punto.
     result = re.sub(r'(?<=\.\s)([a-z])', lambda m: m.group(1).upper(), result)
 
     return result.strip()
@@ -177,6 +201,8 @@ def check_transcription_quality(text):
     if re.search(r'\b(qu|sostenib|fundaci|informaci)\s', text, re.IGNORECASE):
         issues.append("ℹ️ Se aplicaron correcciones automáticas de tildes y palabras cortadas.")
     return issues
+
+# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
 
 def convert_video_to_audio(video_bytes, video_filename):
     try:
@@ -215,6 +241,8 @@ def compress_audio(audio_bytes, original_filename):
 def get_file_size_mb(file_bytes):
     return len(file_bytes) / (1024 * 1024)
 
+# --- FUNCIONES DE ANÁLISIS ---
+
 def generate_summary(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
@@ -222,23 +250,23 @@ def generate_summary(transcription_text, client):
                 {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
                 {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto. Ve directo al contenido, sin introducciones. Mantén todas las tildes correctas:\n\n{transcription_text}"}
             ],
-            model="llama-3.3-70b-versatile", temperature=0.3, max_tokens=500
+            model="llama-3.1-70b-versatile", temperature=0.3, max_tokens=500
         )
         return chat_completion.choices[0].message.content
     except Exception as e:
         return f"Error al generar resumen: {str(e)}"
 
 def answer_question(question, transcription_text, client, conversation_history):
+    """Responde preguntas sobre la transcripción usando el contexto completo y el historial de conversación."""
     try:
         messages = [
             {"role": "system", "content": """Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción proporcionada de manera precisa, concisa y profesional. 
-            
-Reglas importantes:
-- Basa tus respuestas ÚNICAMENTE en la información de la transcripción
-- Si la información no está en la transcripción, indícalo claramente
-- Mantén todas las tildes y acentos correctos en español
-- Sé específico y cita partes relevantes cuando sea apropiado
-- Si te hacen una pregunta de seguimiento, considera el contexto de la conversación anterior"""}
+            Reglas importantes:
+            - Basa tus respuestas ÚNICAMENTE en la información de la transcripción
+            - Si la información no está en la transcripción, indícalo claramente
+            - Mantén todas las tildes y acentos correctos en español
+            - Sé específico y cita partes relevantes cuando sea apropiado
+            - Si te hacen una pregunta de seguimiento, considera el contexto de la conversación anterior"""}
         ]
         
         for qa in conversation_history:
@@ -251,15 +279,13 @@ Reglas importantes:
 ---
 {transcription_text}
 ---
-
 Pregunta: {question}
-
 Responde basándote exclusivamente en la transcripción anterior."""
         })
         
         chat_completion = client.chat.completions.create(
             messages=messages,
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.2,
             max_tokens=800
         )
@@ -304,7 +330,7 @@ def extract_people_and_roles(transcription_text, client):
                     """
                 }
             ],
-            model="llama-3.3-70b-versatile",
+            model="llama-3.1-70b-versatile",
             temperature=0.1,
             max_tokens=1024,
             response_format={"type": "json_object"}
@@ -390,6 +416,7 @@ with col1:
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         st.session_state.audio_start_time = 0
+        st.session_state.audio_player_key = 0 # Reiniciar la key del reproductor también
         st.session_state.last_search = ""
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
@@ -464,8 +491,10 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     
-    # Contenedor principal para el reproductor
-    st.audio(st.session_state.uploaded_audio_bytes, start_time=int(st.session_state.audio_start_time))
+    ### <<< CAMBIO 3: Usar la key dinámica en st.audio
+    st.audio(st.session_state.uploaded_audio_bytes, 
+             start_time=st.session_state.audio_start_time,
+             key=f"audio_player_{st.session_state.audio_player_key}")
     
     # PESTAÑAS PRINCIPALES
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
@@ -477,6 +506,8 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 1: TRANSCRIPCIÓN MEJORADA =====
     with tabs[0]:
         HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
+        MATCH_LINE_STYLE = "background-color: #1e3a5f; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311; color: #ffffff; font-size: 1rem; line-height: 1.6;"
+        CONTEXT_LINE_STYLE = "background-color: #1a1a1a; padding: 0.6rem; border-radius: 4px; color: #b8b8b8; font-size: 0.92rem; line-height: 1.5; border-left: 2px solid #404040;"
         TRANSCRIPTION_BOX_STYLE = "background-color: #0E1117; color: #FAFAFA; border: 1px solid #333; border-radius: 10px; padding: 1.5rem; max-height: 500px; overflow-y: auto; font-family: 'Source Code Pro', monospace; line-height: 1.7; white-space: pre-wrap; font-size: 0.95rem;"
 
         col_search1, col_search2 = st.columns([4, 1])
@@ -506,31 +537,27 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                     for result_num, match_idx in enumerate(matching_indices, 1):
                         st.markdown(f"### 🎯 Resultado {result_num} de {len(matching_indices)}")
                         
-                        # Obtener contexto extendido
                         context_segments = get_extended_context(segments, match_idx, context_lines)
                         
-                        # Mostrar cada línea de contexto
                         for ctx_seg in context_segments:
                             col_time, col_content = st.columns([0.15, 0.85])
                             
                             with col_time:
-                                if ctx_seg['is_match']:
-                                    # Botón para ir al momento exacto
-                                    if st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}", use_container_width=True):
-                                        st.session_state.audio_start_time = int(ctx_seg['start'])
-                                        st.rerun()
-                                else:
-                                    # Solo mostrar timestamp sin botón
-                                    st.markdown(f"<div style='text-align: center; color: #666; font-size: 0.85rem; padding: 0.4rem;'>{ctx_seg['time']}</div>", unsafe_allow_html=True)
+                                ### <<< CAMBIO 4: Usar el callback on_click en los botones de búsqueda
+                                st.button(
+                                    f"▶️ {ctx_seg['time']}", 
+                                    key=f"play_ctx_{result_num}_{ctx_seg['start']}", 
+                                    on_click=set_audio_time,
+                                    args=(int(ctx_seg['start']),), # Pasamos el tiempo como argumento
+                                    use_container_width=True
+                                )
                             
                             with col_content:
                                 if ctx_seg['is_match']:
-                                    # Resaltar la línea que contiene la búsqueda
                                     highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', ctx_seg['text'])
-                                    st.markdown(f"<div style='background-color: #1a1a1a; padding: 0.7rem; border-radius: 5px; border-left: 4px solid #fca311;'>{highlighted_text}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='{MATCH_LINE_STYLE}'><strong>🎯 </strong>{highlighted_text}</div>", unsafe_allow_html=True)
                                 else:
-                                    # Mostrar contexto con estilo diferente
-                                    st.markdown(f"<div style='color: #999; padding: 0.5rem; font-size: 0.9rem;'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
+                                    st.markdown(f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
                         
                         if result_num < len(matching_indices):
                             st.markdown("---")
@@ -555,6 +582,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 2: RESUMEN INTERACTIVO CON Q&A =====
     with tabs[1]:
+        # ... (el código de esta pestaña no necesita cambios)
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo")
             st.markdown(st.session_state.summary)
@@ -570,11 +598,9 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             st.markdown("### 💭 Haz preguntas sobre el contenido")
             st.caption("Pregunta lo que quieras sobre la transcripción y obtén respuestas basadas en el contenido")
             
-            # Inicializar historial de Q&A si no existe
             if 'qa_history' not in st.session_state:
                 st.session_state.qa_history = []
             
-            # Mostrar historial de preguntas y respuestas
             if st.session_state.qa_history:
                 st.markdown("#### 📚 Historial de conversación")
                 for i, qa in enumerate(st.session_state.qa_history):
@@ -583,7 +609,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         st.markdown(f"**🤖 Respuesta:** {qa['answer']}")
                         st.markdown("---")
             
-            # Formulario para nueva pregunta
             with st.form(key="question_form", clear_on_submit=True):
                 user_question = st.text_area(
                     "Escribe tu pregunta aquí:",
@@ -605,18 +630,12 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         client,
                         st.session_state.qa_history
                     )
-                    
-                    # Agregar al historial
-                    st.session_state.qa_history.append({
-                        'question': user_question,
-                        'answer': answer
-                    })
+                    st.session_state.qa_history.append({'question': user_question, 'answer': answer})
                     st.rerun()
             
             if clear_history:
                 st.session_state.qa_history = []
                 st.rerun()
-                
         else:
             st.info("📝 El resumen no fue generado. Activa la opción en el sidebar y vuelve a transcribir.")
     
@@ -630,9 +649,13 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 st.markdown(type_badge)
                 col_q1, col_q2 = st.columns([0.12, 0.88])
                 with col_q1:
-                    if st.button(f"▶️ {quote['time']}", key=f"quote_{idx}"):
-                        st.session_state.audio_start_time = int(quote['start'])
-                        st.rerun()
+                    ### <<< CAMBIO 5: Usar el callback on_click también en los botones de citas
+                    st.button(
+                        f"▶️ {quote['time']}", 
+                        key=f"quote_{idx}",
+                        on_click=set_audio_time,
+                        args=(int(quote['start']),)
+                    )
                 with col_q2:
                     st.markdown(f"*{quote['text']}*")
                     if quote['full_context'] and quote['full_context'] != quote['text']:
@@ -645,6 +668,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 4: PERSONAS CLAVE =====
     if 'people' in st.session_state:
         with tabs[3]:
+            # ... (el código de esta pestaña no necesita cambios)
             st.markdown("### 👥 Personas y Cargos Mencionados")
             people_data = st.session_state.people
             if people_data and not ("Error" in people_data[0]['name']):
@@ -664,7 +688,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time",
-                        "summary", "quotes", "last_search", "search_counter", "people", "qa_history"]
+                        "summary", "quotes", "last_search", "search_counter", "people", "qa_history", "audio_player_key"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
@@ -672,6 +696,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.5</strong> - Desarrollado por Johnathan Cortés 🤖</p>
-<p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, reproducción sincronizada y Q&A interactivo en español</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.4.1 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p>
 </div>""", unsafe_allow_html=True)
