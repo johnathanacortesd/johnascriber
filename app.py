@@ -58,7 +58,7 @@ if 'audio_start_time' not in st.session_state:
 if 'audio_player_key' not in st.session_state:
     st.session_state.audio_player_key = 0
 
-# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO --- ### <<< CORRECCIÓN AQUÍ
+# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
 def set_audio_time(start_seconds):
     # Aseguramos que el valor guardado sea siempre un entero para cumplir con st.audio
     st.session_state.audio_start_time = int(start_seconds)
@@ -154,7 +154,6 @@ def create_copy_button(text_to_copy):
     components.html(button_html, height=40)
 
 def format_timestamp(seconds):
-    # Esta función maneja floats correctamente
     delta = timedelta(seconds=seconds)
     hours, remainder = divmod(delta.seconds, 3600)
     minutes, seconds_val = divmod(remainder, 60)
@@ -415,6 +414,8 @@ st.subheader("📤 Sube tu archivo de audio o video")
 col1, col2 = st.columns([3, 1])
 with col1:
     uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
+
+# <<< CORRECCIÓN DE INDENTACIÓN AQUÍ
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         st.session_state.audio_start_time = 0
@@ -548,7 +549,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                                     f"▶️ {ctx_seg['time']}", 
                                     key=f"play_ctx_{result_num}_{ctx_seg['start']}", 
                                     on_click=set_audio_time,
-                                    args=(ctx_seg['start'],), # Pasamos el float directamente
+                                    args=(ctx_seg['start'],),
                                     use_container_width=True
                                 )
                             
@@ -652,7 +653,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         f"▶️ {quote['time']}", 
                         key=f"quote_{idx}",
                         on_click=set_audio_time,
-                        args=(quote['start'],) # Pasamos el float directamente
+                        args=(quote['start'],)
                     )
                 with col_q2:
                     st.markdown(f"*{quote['text']}*")
@@ -693,6 +694,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
 st.markdown("---")
 st.markdown("""<div style='text-align: center; color: #666;'>
-<p><strong>Transcriptor Pro - Johnascriptor - v2.4.2 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+<p><strong>Transcriptor Pro - Johnascriptor - v2.4.3 (Corregido)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
 <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p>
 </div>""", unsafe_allow_html=True)
