@@ -55,12 +55,12 @@ st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="�
 # --- INICIALIZACIÓN DE ESTADO ---
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
-if 'audio_player_key' not in st.session_state: ### <<< CAMBIO 1: Inicializar la key del reproductor
+if 'audio_player_key' not in st.session_state:
     st.session_state.audio_player_key = 0
 
-# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO --- ### <<< CAMBIO 2: Crear la función callback
+# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
 def set_audio_time(start_seconds):
-    st.session_state.audio_start_time = start_seconds
+    st.session_state.audio_start_time = int(start_seconds)
     # Incrementamos la key para forzar que el componente st.audio se vuelva a renderizar completamente
     st.session_state.audio_player_key += 1
 
@@ -491,10 +491,23 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     
-    ### <<< CAMBIO 3: Usar la key dinámica en st.audio
-    st.audio(st.session_state.uploaded_audio_bytes, 
-             start_time=st.session_state.audio_start_time,
-             key=f"audio_player_{st.session_state.audio_player_key}")
+    # Reproducir audio con manejo de errores
+    if st.session_state.uploaded_audio_bytes:
+        try:
+            st.audio(
+                st.session_state.uploaded_audio_bytes, 
+                start_time=int(st.session_state.audio_start_time),
+                key=f"audio_player_{st.session_state.audio_player_key}"
+            )
+            # Opcional: Información de depuración (comentar si no es necesario)
+            # st.write(f"Debug: audio_player_key={st.session_state.audio_player_key}, start_time={st.session_state.audio_start_time}")
+        except TypeError as e:
+            st.error(f"Error en st.audio: {str(e)}")
+            st.write(f"Debug: audio_player_key={st.session_state.audio_player_key}, start_time={st.session_state.audio_start_time}")
+        except Exception as e:
+            st.error(f"Error inesperado en st.audio: {str(e)}")
+    else:
+        st.warning("⚠️ No hay archivo de audio disponible para reproducir.")
     
     # PESTAÑAS PRINCIPALES
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
@@ -543,7 +556,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                             col_time, col_content = st.columns([0.15, 0.85])
                             
                             with col_time:
-                                ### <<< CAMBIO 4: Usar el callback on_click en los botones de búsqueda
                                 st.button(
                                     f"▶️ {ctx_seg['time']}", 
                                     key=f"play_ctx_{result_num}_{ctx_seg['start']}", 
@@ -582,7 +594,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     # ===== PESTAÑA 2: RESUMEN INTERACTIVO CON Q&A =====
     with tabs[1]:
-        # ... (el código de esta pestaña no necesita cambios)
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo")
             st.markdown(st.session_state.summary)
@@ -649,7 +660,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 st.markdown(type_badge)
                 col_q1, col_q2 = st.columns([0.12, 0.88])
                 with col_q1:
-                    ### <<< CAMBIO 5: Usar el callback on_click también en los botones de citas
                     st.button(
                         f"▶️ {quote['time']}", 
                         key=f"quote_{idx}",
@@ -668,7 +678,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     # ===== PESTAÑA 4: PERSONAS CLAVE =====
     if 'people' in st.session_state:
         with tabs[3]:
-            # ... (el código de esta pestaña no necesita cambios)
             st.markdown("### 👥 Personas y Cargos Mencionados")
             people_data = st.session_state.people
             if people_data and not ("Error" in people_data[0]['name']):
