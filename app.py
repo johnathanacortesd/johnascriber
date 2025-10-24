@@ -97,15 +97,77 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bestan\b': 'están',
     r'\bEstan\b': 'Están',
     
-    # Palabras cortadas (terminadas en -ción, -sión)
-    r'\b(\w+)aci[oó]n?\b': r'\1ación',
-    r'\b(\w+)Aci[oó]n?\b': r'\1Ación',
-    r'\b(\w+)ici[oó]n?\b': r'\1ición',
-    r'\b(\w+)Ici[oó]n?\b': r'\1Ición',
-    r'\b(\w+)uci[oó]n?\b': r'\1ución',
-    r'\b(\w+)Uci[oó]n?\b': r'\1Ución',
-    r'\b(\w+)usi[oó]n?\b': r'\1usión',
-    r'\b(\w+)Usi[oó]n?\b': r'\1Usión',
+    # CORRECCIONES MEJORADAS PARA -CIÓN (más específicas)
+    r'\bfundaci[oó]?n?\b': 'fundación',
+    r'\bFundaci[oó]?n?\b': 'Fundación',
+    r'\binformaci[oó]?n?\b': 'información',
+    r'\bInformaci[oó]?n?\b': 'Información',
+    r'\bsituaci[oó]?n?\b': 'situación',
+    r'\bSituaci[oó]?n?\b': 'Situación',
+    r'\bdeclaraci[oó]?n?\b': 'declaración',
+    r'\bDeclaraci[oó]?n?\b': 'Declaración',
+    r'\bnaci[oó]?n?\b': 'nación',
+    r'\bNaci[oó]?n?\b': 'Nación',
+    r'\bpoblaci[oó]?n?\b': 'población',
+    r'\bPoblaci[oó]?n?\b': 'Población',
+    r'\breuni[oó]?n?\b': 'reunión',
+    r'\bReuni[oó]?n?\b': 'Reunión',
+    r'\bopini[oó]?n?\b': 'opinión',
+    r'\bOpini[oó]?n?\b': 'Opinión',
+    r'\bresoluci[oó]?n?\b': 'resolución',
+    r'\bResoluci[oó]?n?\b': 'Resolución',
+    r'\borganizaci[oó]?n?\b': 'organización',
+    r'\bOrganizaci[oó]?n?\b': 'Organización',
+    r'\bprotecci[oó]?n?\b': 'protección',
+    r'\bProtecci[oó]?n?\b': 'Protección',
+    r'\bparticipaci[oó]?n?\b': 'participación',
+    r'\bParticipaci[oó]?n?\b': 'Participación',
+    r'\binvestigaci[oó]?n?\b': 'investigación',
+    r'\bInvestigaci[oó]?n?\b': 'Investigación',
+    r'\beducaci[oó]?n?\b': 'educación',
+    r'\bEducaci[oó]?n?\b': 'Educación',
+    r'\bsanci[oó]?n?\b': 'sanción',
+    r'\bSanci[oó]?n?\b': 'Sanción',
+    r'\bcomunicaci[oó]?n?\b': 'comunicación',
+    r'\bComunicaci[oó]?n?\b': 'Comunicación',
+    r'\boperaci[oó]?n?\b': 'operación',
+    r'\bOperaci[oó]?n?\b': 'Operación',
+    r'\brelaci[oó]?n?\b': 'relación',
+    r'\bRelaci[oó]?n?\b': 'Relación',
+    r'\badministraci[oó]?n?\b': 'administración',
+    r'\bAdministraci[oó]?n?\b': 'Administración',
+    r'\bimplementaci[oó]?n?\b': 'implementación',
+    r'\bImplementaci[oó]?n?\b': 'Implementación',
+    r'\bactuaci[oó]?n?\b': 'actuación',
+    r'\bActuaci[oó]?n?\b': 'Actuación',
+    r'\bproducci[oó]?n?\b': 'producción',
+    r'\bProducci[oó]?n?\b': 'Producción',
+    r'\bconcentraci[oó]?n?\b': 'concentración',
+    r'\bConcentraci[oó]?n?\b': 'Concentración',
+    r'\bcreaci[oó]?n?\b': 'creación',
+    r'\bCreaci[oó]?n?\b': 'Creación',
+    r'\bcontaminaci[oó]?n?\b': 'contaminación',
+    r'\bContaminaci[oó]?n?\b': 'Contaminación',
+    r'\bformaci[oó]?n?\b': 'formación',
+    r'\bFormaci[oó]?n?\b': 'Formación',
+    r'\bprevenci[oó]?n?\b': 'prevención',
+    r'\bPrevenci[oó]?n?\b': 'Prevención',
+    r'\batenci[oó]?n?\b': 'atención',
+    r'\bAtenci[oó]?n?\b': 'Atención',
+    
+    # Correcciones para -SIÓN
+    r'\bversi[oó]?n?\b': 'versión',
+    r'\bVersi[oó]?n?\b': 'Versión',
+    r'\btensi[oó]?n?\b': 'tensión',
+    r'\bTensi[oó]?n?\b': 'Tensión',
+    r'\bcomisi[oó]?n?\b': 'comisión',
+    r'\bComisi[oó]?n?\b': 'Comisión',
+    r'\bdecisi[oó]?n?\b': 'decisión',
+    r'\bDecisi[oó]?n?\b': 'Decisión',
+    r'\bdivisi[oó]?n?\b': 'división',
+    r'\bDivisi[oó]?n?\b': 'División',
+    r'\bprecisi[oó]?n?\b': 'precisión',
+    r'\bPrecisi[oó]?n?\b': 'Precisión',
     
     # Días de la semana
     r'\bmiercoles\b': 'miércoles',
@@ -579,15 +641,16 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     
-    # Reproductor de audio con key único para forzar actualización
+    # Reproductor de audio
     if st.session_state.uploaded_audio_bytes:
         try:
-            audio_key = f"audio_player_{st.session_state.audio_start_time}"
-            st.audio(
-                st.session_state.uploaded_audio_bytes, 
-                start_time=st.session_state.audio_start_time,
-                key=audio_key
-            )
+            # Usar un container único para forzar actualización
+            audio_container = st.container()
+            with audio_container:
+                st.audio(
+                    st.session_state.uploaded_audio_bytes, 
+                    start_time=st.session_state.audio_start_time
+                )
             
             # Mostrar tiempo actual
             if st.session_state.audio_start_time > 0:
