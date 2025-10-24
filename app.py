@@ -522,4 +522,4 @@ st.markdown("""
     <p><strong>Transcriptor Pro - Johnascriptor - v3.5.0 (whisper-large-v3 | llama-3.1-8b-instant)</strong> - por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con prompt de transcripción mejorado para máxima fidelidad</p>
 </div>
-""", unsafe_allow_html=True)```
+""", unsafe_allow_html=True)
