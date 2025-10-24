@@ -457,23 +457,38 @@ if 'transcription' in st.session_state:
 
     with tabs[1]:
         if 'summary' in st.session_state:
-            st.markdown("### 📝 Resumen Ejecutivo"); st.markdown(st.session_state.summary)
+            st.markdown("### 📝 Resumen Ejecutivo")
+            st.markdown(st.session_state.summary)
             st.markdown("---")
             st.markdown("### 💭 Haz preguntas sobre el contenido")
+            
+            # --- MODIFICACIÓN AQUÍ: Historial visible por defecto ---
             if st.session_state.qa_history:
-                with st.expander("📚 Ver historial de conversación"):
-                    for qa in st.session_state.qa_history:
-                        st.markdown(f"**P:** {qa['question']}\n\n**R:** {qa['answer']}")
+                st.markdown("#### 📚 Historial de conversación")
+                for i, qa in enumerate(st.session_state.qa_history):
+                    st.markdown(f"**Pregunta {i+1}:** {qa['question']}")
+                    st.markdown(f"**Respuesta:** {qa['answer']}")
+                    st.markdown("---")
+
             with st.form(key="q_form", clear_on_submit=True):
-                user_q = st.text_area("Escribe tu pregunta aquí:")
+                user_q = st.text_area("Escribe tu pregunta aquí:", height=100)
                 s_q, c_h = st.columns(2)
-                if s_q.form_submit_button("🚀 Enviar", use_container_width=True) and user_q.strip():
+                with s_q:
+                    submit_question = st.form_submit_button("🚀 Enviar Pregunta", use_container_width=True)
+                with c_h:
+                    clear_history = st.form_submit_button("🗑️ Borrar Historial", use_container_width=True)
+
+                if submit_question and user_q.strip():
                     with st.spinner("🤔 Analizando..."):
                         ans = answer_question(user_q, st.session_state.transcription, Groq(api_key=api_key), st.session_state.qa_history)
-                        st.session_state.qa_history.append({'question': user_q, 'answer': ans}); st.rerun()
-                if c_h.form_submit_button("🗑️ Borrar Historial", use_container_width=True):
-                    st.session_state.qa_history = []; st.rerun()
-        else: st.info("📝 El resumen no fue generado.")
+                        st.session_state.qa_history.append({'question': user_q, 'answer': ans})
+                        st.rerun()
+                
+                if clear_history:
+                    st.session_state.qa_history = []
+                    st.rerun()
+        else: 
+            st.info("📝 El resumen no fue generado. Activa la opción en el sidebar y vuelve a transcribir.")
     
     tab_idx = 2
     if 'people' in st.session_state and st.session_state.people:
@@ -500,7 +515,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.3.0 (whisper-large-v3 | llama-3.1-8b-instant)</strong> - por Johnathan Cortés 🤖</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v3.4.0 (whisper-large-v3 | llama-3.1-8b-instant)</strong> - por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con optimización de audio, post-procesamiento IA y análisis de entidades</p>
 </div>
 """, unsafe_allow_html=True)
