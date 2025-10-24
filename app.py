@@ -497,4 +497,4 @@ st.markdown("""
     <p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de post-procesamiento IA, corrección mejorada y análisis de marcas</p>
 </div>
-""", unsafe_allow_html=True)```
+""", unsafe_allow_html=True)
