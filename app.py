@@ -55,16 +55,12 @@ st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="�
 # --- INICIALIZACIÓN DE ESTADO ---
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
-# --- MEJORA --- Se añade un contador para forzar la recarga del audio player
-if 'audio_rerun_counter' not in st.session_state:
-    st.session_state.audio_rerun_counter = 0
 
 # --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
 def set_audio_time(start_seconds):
+    """Actualiza el tiempo de inicio en el estado de la sesión."""
     st.session_state.audio_start_time = int(start_seconds)
-    # --- MEJORA --- Incrementamos el contador para cambiar la 'key' del st.audio y forzar su recarga
-    st.session_state.audio_rerun_counter += 1
-    # st.rerun() # Opcional: st.rerun() puede hacer la app más reactiva pero a veces causa doble ejecución. Probar con y sin él.
+    # No se necesita st.rerun() aquí porque el propio clic en el botón ya lo provoca.
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -116,11 +112,11 @@ SPANISH_WORD_CORRECTIONS = {
     r'\b(D|d)ónde\b': r'\1ónde',
 
     # Correcciones de tildes diacríticas
-    r'\b(E|e)l(?=\s[A-ZÁÉÍÓÚÑ])': r'\1l', # "El" (artículo) antes de nombre propio
-    r'\b(E|e)l\s(es|fue|será)\b': r'\1l \2', # "El es" -> "Él es"
-    r'\b(S|s)i(?=,?\s[A-ZÁÉÍÓÚÑ])': r'\1í', # Si, [Nombre] -> Sí, [Nombre]
+    r'\b(E|e)l(?=\s[A-ZÁÉÍÓÚÑ])': r'\1l',
+    r'\b(E|e)l\s(es|fue|será)\b': r'\1l \2',
+    r'\b(S|s)i(?=,?\s[A-ZÁÉÍÓÚÑ])': r'\1í',
     r'\b(M|m)as\b': r'\1ás',
-    r'\b(S|s)olo\b': r'\1ólo', # Aunque la RAE ya no lo recomienda, es común en transcripciones
+    r'\b(S|s)olo\b': r'\1ólo',
 }
 
 
@@ -148,18 +144,14 @@ def format_transcription_with_timestamps(data):
 def fix_spanish_encoding(text):
     if not text: return text
     result = text
-    # Primero, las correcciones básicas de encoding si las hubiera
     encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã‘': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
     
-    # Después, el diccionario de correcciones de palabras
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
         result = re.sub(pattern, replacement, result)
 
-    # Corregir letras repetidas innecesariamente
     result = re.sub(r'([a-záéíóúñ])\1{2,}', r'\1', result, flags=re.IGNORECASE)
-    # Poner en mayúscula la letra después de un punto
     result = re.sub(r'(?<=\.\s)([a-z])', lambda m: m.group(1).upper(), result)
     return result.strip()
 
@@ -263,7 +255,6 @@ def extract_people_and_roles(transcription_text, client):
         )
         response_content = chat_completion.choices[0].message.content
         data = json.loads(response_content)
-        # --- MEJORA --- Búsqueda más robusta de la lista dentro del JSON devuelto
         if isinstance(data, list): return data
         for key in data:
             if isinstance(data[key], list): return data[key]
@@ -303,9 +294,7 @@ col1, col2 = st.columns([3, 1])
 with col1: uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
-        # --- MEJORA --- Reiniciar estado de forma más completa
         st.session_state.audio_start_time = 0
-        st.session_state.audio_rerun_counter = 0
         st.session_state.last_search = ""
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
@@ -321,7 +310,6 @@ with col2:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp: tmp.write(file_bytes); tmp_file_path = tmp.name
                 with st.spinner("🔄 Transcribiendo con IA... (puede tardar unos minutos)"):
                     with open(tmp_file_path, "rb") as audio_file:
-                        # --- MEJORA --- Prompt mucho más detallado y específico para español.
                         spanish_prompt = (
                             "Este es un audio en español. Transcribe con la máxima precisión ortográfica y gramatical. "
                             "Presta especial atención a las tildes, diéresis y la correcta puntuación. Asegúrate de abrir y cerrar "
@@ -357,12 +345,17 @@ with col2:
 
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
     st.markdown("---"); st.subheader("🎧 Reproduce y Analiza el Contenido")
+    
+    # --- CORRECCIÓN FINAL: Usar st.empty() como placeholder ---
+    audio_placeholder = st.empty()
     if st.session_state.uploaded_audio_bytes:
         try:
-            # --- MEJORA --- Se añade la 'key' dinámica para forzar la recarga del componente de audio
-            st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time, key=f"audio_player_{st.session_state.audio_rerun_counter}")
-        except Exception as e: st.error(f"Error inesperado al intentar reproducir el audio: {str(e)}")
-    else: st.warning("⚠️ No hay archivo de audio disponible para reproducir.")
+            # Dibujar el reproductor de audio dentro del placeholder
+            audio_placeholder.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
+        except Exception as e:
+            audio_placeholder.error(f"Error inesperado al intentar reproducir el audio: {str(e)}")
+    else:
+        st.warning("⚠️ No hay archivo de audio disponible para reproducir.")
     
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
     if 'people' in st.session_state: tab_titles.append("👥 Personas Clave")
@@ -379,7 +372,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             search_query = st.text_input("🔎 Buscar en la transcripción:", value=st.session_state.get('last_search', ''), key=f"search_input_{st.session_state.get('search_counter', 0)}")
             if search_query != st.session_state.get('last_search', ''): st.session_state.last_search = search_query
         with col_search2:
-            st.write("") # Spacer
+            st.write("") 
             if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query):
                 st.session_state.last_search = ""
                 st.session_state.search_counter += 1
@@ -402,7 +395,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                         for ctx_seg in context_segments:
                             col_time, col_content = st.columns([0.15, 0.85])
                             with col_time:
-                                # --- MEJORA --- La key ahora es más única para evitar conflictos en Streamlit
                                 st.button(f"▶️ {ctx_seg['time']}", key=f"play_ctx_{result_num}_{ctx_seg['start']}_{match_idx}", on_click=set_audio_time, args=(ctx_seg['start'],), use_container_width=True)
                             with col_content:
                                 if ctx_seg['is_match']:
@@ -506,11 +498,11 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
-        keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time", "audio_rerun_counter", "summary", "quotes", "last_search", "search_counter", "people", "qa_history"]
+        keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time", "summary", "quotes", "last_search", "search_counter", "people", "qa_history"]
         for key in keys_to_delete:
             if key in st.session_state:
                 del st.session_state[key]
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.7.0 (Modelo whisper-large-v3 | llama3-70b-8192)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.8.0 (Modelo whisper-large-v3 | llama3-70b-8192)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
