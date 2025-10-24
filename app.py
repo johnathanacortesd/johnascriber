@@ -234,7 +234,6 @@ def extract_people_and_roles(transcription_text, client):
         return []
     except (json.JSONDecodeError, Exception) as e: return [{"name": "Error de Análisis", "role": str(e), "context": "No se pudo procesar la respuesta de la IA o no devolvió un JSON válido."}]
 
-# --- MEJORA: Nueva función para extraer marcas ---
 def extract_brands(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
@@ -269,7 +268,6 @@ def export_to_srt(data):
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
 with st.sidebar:
     st.header("⚙️ Configuración"); model_option = st.selectbox("Modelo de Transcripción", ["whisper-large-v3"]); language = st.selectbox("Idioma", ["es"]); temperature = st.slider("Temperatura", 0.0, 1.0, 0.0, 0.1, help="0.0 para máxima precisión"); st.markdown("---"); st.subheader("🎯 Análisis Inteligente"); enable_tilde_fix = st.checkbox("✨ Corrección de tildes", value=True, help="Repara palabras cortadas y acentos."); enable_summary = st.checkbox("📝 Generar resumen", value=True); enable_quotes = st.checkbox("💬 Identificar citas", value=True); enable_people = st.checkbox("👤 Extraer personas", value=True)
-    # --- MEJORA: Checkbox para nueva función de marcas ---
     enable_brands = st.checkbox("🏢 Extraer marcas y empresas", value=True)
     st.markdown("---"); st.subheader("🔍 Búsqueda Contextual"); context_lines = st.slider("Líneas de contexto", 1, 5, 2); st.markdown("---"); st.subheader("🔧 Procesamiento de Audio")
     if MOVIEPY_AVAILABLE: st.info("💡 MP4 > 25 MB se convertirán a audio."); compress_audio_option = st.checkbox("📦 Comprimir audio", value=False)
@@ -281,7 +279,23 @@ col1, col2 = st.columns([3, 1])
 with col1: uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
-        st.session_state.clear(); st.session_state.password_correct = True # Limpiar estado anterior pero mantener sesión
+        
+        # --- CORRECCIÓN: Limpieza segura del estado de la sesión ---
+        # Borrar solo las claves de resultados anteriores, no todo el estado
+        keys_to_clear = [
+            "transcription", "transcription_data", "uploaded_audio_bytes", 
+            "summary", "quotes", "people", "brands", "qa_history",
+            "last_search", "search_counter"
+        ]
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        
+        # Inicializar/resetear valores para la nueva transcripción
+        st.session_state.audio_start_time = 0
+        st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
+        st.session_state.qa_history = []
+
         with st.spinner("🔄 Procesando archivo..."):
             try:
                 file_bytes = uploaded_file.getvalue(); original_size = get_file_size_mb(file_bytes); is_video = os.path.splitext(uploaded_file.name)[1].lower() in ['.mp4', '.mpeg', '.webm']
@@ -308,10 +322,9 @@ with col2:
                     if enable_summary: st.session_state.summary = generate_summary(transcription_text, client)
                     if enable_quotes: st.session_state.quotes = extract_quotes(transcription.segments)
                     if enable_people: st.session_state.people = extract_people_and_roles(transcription_text, client)
-                    # --- MEJORA: Llamada a la nueva función de marcas ---
                     if enable_brands: st.session_state.brands = extract_brands(transcription_text, client)
                 st.success("✅ ¡Transcripción y análisis completados!"); st.balloons()
-            except Exception as e: st.error(f"❌ Error durante la transcripción: {str(e)}")
+            except Exception as e: st.error(f"❌ Error durante el proceso: {str(e)}")
 
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
     st.markdown("---"); st.subheader("🎧 Reproduce y Analiza el Contenido")
@@ -322,7 +335,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
     
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
     if 'people' in st.session_state: tab_titles.append("👥 Personas Clave")
-    # --- MEJORA: Añadir título de la nueva pestaña de marcas ---
     if 'brands' in st.session_state: tab_titles.append("🏢 Marcas y Empresas")
     tabs = st.tabs(tab_titles)
 
@@ -339,7 +351,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         transcription_html = st.session_state.transcription.replace('\n', '<br>')
         if search_query: pattern = re.compile(re.escape(search_query), re.IGNORECASE); transcription_html = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', transcription_html)
         
-        # --- MEJORA: Añadir ID al div y script para resetear el scroll ---
         st.markdown(f'<div id="transcription-box" style="{TRANSCRIPTION_BOX_STYLE}">{transcription_html}</div>', unsafe_allow_html=True)
         components.html("""<script>setTimeout(() => { const box = document.getElementById('transcription-box'); if (box) { box.scrollTop = 0; } }, 50);</script>""", height=0)
         
@@ -351,7 +362,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         with col_d4: create_copy_button(st.session_state.transcription)
 
     with tabs[1]:
-        # (El contenido de esta pestaña no cambia)
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo"); st.markdown(st.session_state.summary); st.write("")
             st.download_button("💾 Descargar Resumen", st.session_state.summary.encode('utf-8'), "resumen.txt", use_container_width=True)
@@ -368,7 +378,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 with st.spinner("🤔 Analizando..."):
                     client = Groq(api_key=api_key); answer = answer_question(user_question, st.session_state.transcription, client, st.session_state.qa_history); st.session_state.qa_history.append({'question': user_question, 'answer': answer}); st.rerun()
     with tabs[2]:
-        # (El contenido de esta pestaña no cambia)
         if 'quotes' in st.session_state and st.session_state.quotes:
             st.markdown("### 💬 Citas y Declaraciones Relevantes")
             for idx, quote in enumerate(st.session_state.quotes):
@@ -384,7 +393,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             st.markdown("### 👥 Personas y Cargos Mencionados"); people_data = st.session_state.people
             if people_data and "Error" not in people_data[0]['name']:
                 st.caption(f"Se identificaron {len(people_data)} personas clave.")
-                # --- MEJORA: Usar enumerate para dar una key única a cada expander ---
                 for idx, person in enumerate(people_data):
                     st.markdown(f"**👤 {person['name']}** - *{person.get('role', 'No especificado')}*")
                     with st.expander("📝 Ver contexto", key=f"person_expander_{idx}"):
@@ -392,7 +400,6 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             else: st.info("👤 No se identificaron personas o hubo un error en el análisis.")
         tab_index_counter += 1
 
-    # --- MEJORA: Nueva pestaña para mostrar las marcas ---
     if 'brands' in st.session_state:
         with tabs[tab_index_counter]:
             st.markdown("### 🏢 Marcas y Empresas Mencionadas"); brands_data = st.session_state.brands
@@ -406,11 +413,10 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
 
     st.markdown("---")
     if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
-        # --- MEJORA: Añadir 'brands' a la lista de limpieza ---
         keys_to_delete = ["transcription", "transcription_data", "uploaded_audio_bytes", "audio_start_time", "summary", "quotes", "last_search", "search_counter", "people", "qa_history", "brands"]
         for key in keys_to_delete:
             if key in st.session_state: del st.session_state[key]
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con extracción de entidades mejorada y corrección de tildes avanzada</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.3.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con extracción de entidades mejorada y corrección de tildes avanzada</p></div>""", unsafe_allow_html=True)
