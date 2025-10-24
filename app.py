@@ -142,23 +142,23 @@ def get_file_size_mb(file_bytes):
 
 # --- FUNCIÓN DE POST-PROCESAMIENTO CON IA ---
 def post_process_with_llama(transcription_text, client):
+    if not transcription_text or not transcription_text.strip():
+        return transcription_text
     try:
         chat_completion = client.chat.completions.create(
             messages=[
                 {"role": "system", "content": """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
-
 **REGLAS INVIOLABLES:**
-1.  **ACENTUACIÓN PRECISA:** Tu tarea principal es añadir tildes faltantes a palabras que inequívocamente las requieren (ej: `como` -> `cómo`, `esta` -> `está`, `mas` -> `más`).
-2.  **COMPLETAR PALABRAS:** Únicamente completarás palabras con terminaciones obvias y comunes en transcripciones (ej: `informaci` -> `información`, `tecnolog` -> `tecnología`).
-3.  **NO CAMBIAR PALABRAS VÁLIDAS:** Si una palabra ya es correcta y existe en el diccionario español, NO la modificarás bajo ninguna circunstancia.
-4.  **PROHIBIDO INVENTAR, OMITIR O REESCRIBIR:** No puedes añadir, eliminar ni cambiar el orden de las palabras. No puedes reescribir frases.
+1.  **ACENTUACIÓN PRECISA:** Añade tildes faltantes a palabras que inequívocamente las requieren (ej: `como` -> `cómo`, `esta` -> `está`, `mas` -> `más`).
+2.  **COMPLETAR PALABRAS:** Únicamente completa palabras con terminaciones obvias y comunes (ej: `informaci` -> `información`, `tecnolog` -> `tecnología`).
+3.  **NO CAMBIAR PALABRAS VÁLIDAS:** Si una palabra ya es correcta, NO la modificarás bajo ninguna circunstancia.
+4.  **PROHIBIDO INVENTAR, OMITIR O REESCRIBIR:** No puedes añadir, eliminar ni cambiar el orden de las palabras. No reescribas frases.
 5.  **DEVOLVER TEXTO ÍNTEGRO:** Siempre devolverás el texto completo, aplicando únicamente las correcciones permitidas.
-
 Tu salida debe ser únicamente el texto corregido."""},
                 {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
             ],
             model="llama-3.1-8b-instant", 
-            temperature=0.0, # Temperatura CERO para máxima precisión y predictibilidad
+            temperature=0.0,
             max_tokens=4096
         )
         return chat_completion.choices[0].message.content.strip()
@@ -181,7 +181,7 @@ def generate_summary(transcription_text, client):
 
 def answer_question(question, transcription_text, client, conversation_history):
     try:
-        messages = [{"role": "system", "content": "Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción de manera precisa y concisa, basándote ÚNICAMENTE en la información proporcionada. Si la información no está en la transcripción, indícalo claramente. Considera el historial de la conversación para preguntas de seguimiento."}]
+        messages = [{"role": "system", "content": "Eres un asistente experto. Responde preguntas sobre la transcripción de manera precisa y concisa, basándote ÚNICAMENTE en la información proporcionada. Si la información no está en la transcripción, indícalo claramente. Considera el historial de la conversación."}]
         for qa in conversation_history:
             messages.append({"role": "user", "content": qa["question"]})
             messages.append({"role": "assistant", "content": qa["answer"]})
@@ -194,15 +194,16 @@ def answer_question(question, transcription_text, client, conversation_history):
 
 def extract_people_and_roles(transcription_text, client):
     try:
+        # MODIFICACIÓN: Instrucciones más estrictas para evitar valores nulos.
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión. Tu tarea es identificar CADA persona mencionada por su nombre completo en la transcripción y su rol o cargo si se especifica.
-
+                {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión.
 REGLAS ESTRICTAS:
-1.  **SOLO PERSONAS**: Extrae únicamente nombres de individuos (ej: "Juan Pérez"). NO extraigas nombres de organizaciones.
-2.  **ROL EXACTO**: Si se menciona un cargo (ej: "presidente"), captúralo. Si no, usa "No especificado". No inventes roles.
+1.  **SOLO PERSONAS**: Extrae únicamente nombres de individuos. NO extraigas nombres de organizaciones.
+2.  **ROL EXACTO**: Si se menciona un cargo, captúralo. Si no se menciona ningún rol, DEBES usar el valor string "No especificado".
 3.  **CONTEXTO PRECISO**: El contexto es la frase exacta donde se menciona a la persona.
-4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "personas".'''},
+4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "personas".
+5.  **SIEMPRE INCLUIR TODAS LAS CLAVES**: Para cada persona, el JSON resultante DEBE incluir las claves `name`, `role` y `context`. NO omitas ninguna clave.'''},
                 {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las personas y sus roles según tus reglas. Devuelve solo el JSON:\n\n{transcription_text}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"}
@@ -214,15 +215,16 @@ REGLAS ESTRICTAS:
 
 def extract_brands_and_entities(transcription_text, client):
     try:
+        # MODIFICACIÓN: Instrucciones más estrictas para evitar valores nulos.
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión. Tu tarea es identificar CADA marca comercial, empresa, organización o institución mencionada en el texto.
-
+                {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión.
 REGLAS ESTRICTAS:
 1.  **SOLO ORGANIZACIONES**: Extrae únicamente nombres de entidades (ej: "Google", "Ministerio de Educación"). NO extraigas nombres de personas.
-2.  **TIPO DE ENTIDAD**: Clasifica la entidad como "Empresa", "Institución", "ONG", "Marca", etc.
+2.  **TIPO DE ENTIDAD**: Clasifica la entidad ("Empresa", "Institución", etc.). Si el tipo no es claro, DEBES usar el valor string "No especificado".
 3.  **CONTEXTO PRECISO**: El contexto es la frase exacta donde se menciona la entidad.
-4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "entidades".'''},
+4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "entidades".
+5.  **SIEMPRE INCLUIR TODAS LAS CLAVES**: Para cada entidad, el JSON resultante DEBE incluir las claves `name`, `type` y `context`. NO omitas ninguna clave.'''},
                 {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las marcas y organizaciones según tus reglas. Devuelve solo el JSON:\n\n{transcription_text}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"}
@@ -301,29 +303,26 @@ with col2:
                 
                 with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
                     with open(tmp_file_path, "rb") as audio_file:
-                        spanish_prompt = (
-                            "Esta es una transcripción profesional que requiere la máxima precisión. Transcribe absolutamente todo el audio de forma literal. "
-                            "No omitas ninguna palabra, frase o segmento, incluso si el audio es poco claro o hay ruido de fondo. "
-                            "Tu objetivo es la exhaustividad total. No resumas ni omitas NADA."
-                        )
-
                         transcription = client.audio.transcriptions.create(
                             file=(uploaded_file.name, audio_file.read()),
                             model=model_option,
                             language=language,
                             response_format="verbose_json",
-                            prompt=spanish_prompt,
-                            temperature=0.0 # Temperatura CERO para máxima precisión y literalidad
+                            temperature=0.0
                         )
                 os.unlink(tmp_file_path)
-                
-                transcription_text = fix_spanish_encoding(transcription.text)
-                if enable_llama_postprocess:
-                    with st.spinner("🤖 Mejorando transcripción con IA..."):
-                        transcription_text = post_process_with_llama(transcription_text, client)
-                
-                for seg in transcription.segments:
-                    seg['text'] = fix_spanish_encoding(seg['text'])
+
+                progress_text = "🤖 Mejorando transcripción con IA..." if enable_llama_postprocess else "🧹 Limpiando transcripción..."
+                with st.spinner(progress_text):
+                    progress_bar = st.progress(0, text=f"Procesando segmento 0/{len(transcription.segments)}")
+                    for i, seg in enumerate(transcription.segments):
+                        cleaned_text = fix_spanish_encoding(seg['text'])
+                        if enable_llama_postprocess:
+                            cleaned_text = post_process_with_llama(cleaned_text, client)
+                        seg['text'] = cleaned_text
+                        progress_bar.progress((i + 1) / len(transcription.segments), text=f"Procesando segmento {i+1}/{len(transcription.segments)}")
+
+                transcription_text = "\n".join([seg['text'].strip() for seg in transcription.segments])
                 
                 st.session_state.transcription = transcription_text
                 st.session_state.transcription_data = transcription
@@ -447,8 +446,15 @@ if 'transcription' in st.session_state:
             people_data = st.session_state.people
             if people_data and "Error" not in people_data[0].get('name', ''):
                 for person in people_data:
-                    st.markdown(f"**👤 {person.get('name', 'N/A')}** | **Rol:** *{person.get('role', 'N/A')}*")
-                    with st.expander("Ver contexto"): st.markdown(f"> {person.get('context', 'N/A')}")
+                    person_name = person.get('name', 'Dato no encontrado')
+                    person_role = person.get('role')
+                    
+                    # MODIFICACIÓN: Mostrar el rol solo si es útil
+                    role_str = f"| **Rol:** *{person_role}*" if person_role and person_role != 'No especificado' else ""
+                    st.markdown(f"**👤 {person_name}** {role_str}")
+                    
+                    with st.expander("Ver contexto"): 
+                        st.markdown(f"> {person.get('context', 'Contexto no disponible')}")
             else: st.info("👤 No se identificaron personas o hubo un error en el análisis.")
         tab_index += 1
 
@@ -458,8 +464,15 @@ if 'transcription' in st.session_state:
             brands_data = st.session_state.brands
             if brands_data and "Error" not in brands_data[0].get('name', ''):
                 for brand in brands_data:
-                    st.markdown(f"**🏢 {brand.get('name', 'N/A')}** | **Tipo:** *{brand.get('type', 'N/A')}*")
-                    with st.expander("Ver contexto"): st.markdown(f"> {brand.get('context', 'N/A')}")
+                    brand_name = brand.get('name', 'Dato no encontrado')
+                    brand_type = brand.get('type')
+                    
+                    # MODIFICACIÓN: Mostrar el tipo solo si es útil
+                    type_str = f"| **Tipo:** *{brand_type}*" if brand_type and brand_type != 'No especificado' else ""
+                    st.markdown(f"**🏢 {brand_name}** {type_str}")
+
+                    with st.expander("Ver contexto"): 
+                        st.markdown(f"> {brand.get('context', 'Contexto no disponible')}")
             else: st.info("🏢 No se identificaron marcas o hubo un error en el análisis.")
 
 # --- Pie de página y Limpieza ---
@@ -473,7 +486,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v3.2.2 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de post-procesamiento IA, corrección mejorada y análisis de marcas</p>
 </div>
 """, unsafe_allow_html=True)
