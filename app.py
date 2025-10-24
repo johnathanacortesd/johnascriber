@@ -140,7 +140,10 @@ def format_transcription_with_timestamps(data):
 def fix_spanish_encoding(text):
     if not text: return text
     result = text
-    encoding_fixes = {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã'': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'}
+    encoding_fixes = {
+        'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 
+        'Ã±': 'ñ', 'Ã'': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'
+    }
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
