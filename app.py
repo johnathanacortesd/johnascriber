@@ -69,10 +69,7 @@ except KeyError:
 
 # --- DICCIONARIO DE CORRECCIONES AMPLIADO Y MEJORADO ---
 SPANISH_WORD_CORRECTIONS = {
-    # Errores comunes de transcripción (ej: "S Natalia" -> "Sí, Natalia")
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
-
-    # Palabras cortadas terminadas en -ción
     r'\badministraci(?!ón\b)\b': 'administración', r'\bAdministraci(?!ón\b)\b': 'Administración',
     r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bComunicaci(?!ón\b)\b': 'Comunicación',
     r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\bDeclaraci(?!ón\b)\b': 'Declaración',
@@ -96,8 +93,6 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bresoluci(?!ón\b)\b': 'resolución', r'\bResoluci(?!ón\b)\b': 'Resolución',
     r'\bsanci(?!ón\b)\b': 'sanción', r'\bSanci(?!ón\b)\b': 'Sanción',
     r'\bsituaci(?!ón\b)\b': 'situación', r'\bSituaci(?!ón\b)\b': 'Situación',
-    
-    # Palabras cortadas terminadas en -ía, -ica, -ico
     r'\bCancerolog(?!ía\b)\b': 'Cancerología', r'\bCancerolog(?!ía\b)\b': 'Cancerología',
     r'\bcompañí(?!a\b)\b': 'compañía', r'\bCompañí(?!a\b)\b': 'Compañía',
     r'\beconomí(?!a\b)\b': 'economía', r'\bEconomí(?!a\b)\b': 'Economía',
@@ -108,8 +103,6 @@ SPANISH_WORD_CORRECTIONS = {
     r'\bpolític(?!a\b)\b': 'política', r'\bPolític(?!a\b)\b': 'Política',
     r'\bRepúblic(?!a\b)\b': 'República', r'\brepúblic(?!a\b)\b': 'república',
     r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bTecnolog(?!ía\b)\b': 'Tecnología',
-
-    # Nombres propios y otras palabras con tildes
     r'\bAméric(?!a\b)\b': 'América',
     r'\bBogot(?!á\b)\b': 'Bogotá',
     r'\bMéxic(?!o\b)\b': 'México',
@@ -117,15 +110,11 @@ SPANISH_WORD_CORRECTIONS = {
     r'\badem(?!ás\b)\b': 'además', r'\bAdem(?!ás\b)\b': 'Además',
     r'\btambi(?!én\b)\b': 'también', r'\bTambi(?!én\b)\b': 'También',
     r'\búltim(?!o\b)\b': 'último', r'\bÚltim(?!o\b)\b': 'Último',
-
-    # Palabras cortadas varias
     r'\bdí\b': 'día', r'\bDí\b': 'Día',
     r'\bmiércole\b': 'miércoles', r'\bMiércole\b': 'Miércoles',
     r'\bdocumenta\b': 'documental', r'\bDocumenta\b': 'Documental',
     r'\bsostenib\b': 'sostenible', r'\bSostenib\b': 'Sostenible',
     r'\bentretenimient\b': 'entretenimiento', r'\bEntretenimient\b': 'Entretenimiento',
-
-    # Correcciones de interrogativas y diacríticos
     r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué',
     r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde',
     r'\b(E|e)l\s(es|fue|será)\b': r'\1l \2', r'\b(M|m)as\b': r'\1ás',
@@ -215,7 +204,7 @@ def generate_summary(transcription_text, client):
                 {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
                 {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto. Ve directo al contenido, sin introducciones. Mantén todas las tildes correctas:\n\n{transcription_text}"}
             ],
-            model="llama3-70b-8192", 
+            model="llama-3.1-8b-instant", 
             temperature=0.3, 
             max_tokens=500
         )
@@ -231,7 +220,7 @@ def answer_question(question, transcription_text, client, conversation_history):
         messages.append({"role": "user", "content": f"Transcripción completa del audio:\n---\n{transcription_text}\n---\nPregunta: {question}\nResponde basándote exclusivamente en la transcripción anterior."})
         chat_completion = client.chat.completions.create(
             messages=messages, 
-            model="llama3-70b-8192", 
+            model="llama-3.1-8b-instant", 
             temperature=0.2, 
             max_tokens=800
         )
@@ -257,7 +246,7 @@ def extract_people_and_roles(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
             messages=[{"role": "system", "content": 'Eres un analista experto en transcripciones de noticias. Tu tarea es identificar a todas las personas mencionadas por su nombre y, si se especifica, su cargo o rol. Debes devolver la información en formato JSON. El JSON debe ser una lista de objetos. Cada objeto debe tener tres claves: "name", "role" y "context".\n- "name": El nombre completo de la persona.\n- "role": El cargo o rol asociado (ej: "Presidente", "Director de la Fundación", "Analista"). Si no se menciona un rol, usa el valor "No especificado".\n- "context": La frase exacta de la transcripción donde se menciona a la persona y su rol.\nAsegúrate de que el JSON esté bien formado.'}, {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las personas y sus roles. Formatea la salida como una lista JSON. Aquí está la transcripción:\n\n{transcription_text}"}],
-            model="llama3-70b-8192", 
+            model="llama-3.1-8b-instant", 
             temperature=0.1, 
             max_tokens=1024,
             response_format={"type": "json_object"}
@@ -442,4 +431,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.0.0 (Modelo whisper-large-v3 | llama3-70b-8192)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con sistema de corrección post-IA mejorado y búsqueda contextual</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.1.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con sistema de corrección post-IA mejorado y búsqueda contextual</p></div>""", unsafe_allow_html=True)
