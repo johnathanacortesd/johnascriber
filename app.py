@@ -14,7 +14,7 @@ try:
 except ImportError:
     MOVIEPY_AVAILABLE = False
 
-# --- LÓGICA DE AUTENTICACIÓN ---
+# --- LÓGICA DE AUTENTicación ---
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
@@ -56,6 +56,7 @@ except KeyError:
 # --- FUNCIONES AUXILIARES Y DE PROCESAMIENTO ---
 def get_file_size_mb(file_bytes): return len(file_bytes) / (1024 * 1024)
 def format_timestamp(seconds): return str(timedelta(seconds=int(seconds)))
+
 def export_to_srt(data):
     srt=[]
     for i,seg in enumerate(data.segments,1):
@@ -88,37 +89,29 @@ def compress_audio(audio_bytes, filename):
         return compressed_bytes
     except Exception: return audio_bytes
 
-# --- NUEVA FUNCIÓN DE CORRECCIÓN CON IA ---
+# --- FUNCIONES DE ANÁLISIS CON IA ---
 def correct_transcription_with_llm(raw_text, client):
     try:
-        # PROMPT DE CORRECCIÓN MEJORADO
         prompt = """Eres un editor de transcripciones para un noticiero de Colombia. Tu única tarea es corregir el siguiente texto.
 Reglas estrictas:
-1.  Corrige errores ortográficos y gramaticales.
-2.  Añade las tildes faltantes (ej: 'saco' -> 'sacó', 'pais' -> 'país').
-3.  Completa palabras que parezcan cortadas o incompletas (ej: 'autocr' -> 'autocrítica', 'merec' -> 'merecían').
-4.  Asegura que los signos de puntuación tengan sentido.
-5.  NO añadas contenido nuevo, no resumas, no cambies el significado. Solo corrige.
-6.  Devuelve únicamente el texto corregido, sin ninguna introducción o comentario.
+1. Corrige errores ortográficos y gramaticales (ej: 'sac espacio' -> 'sacó espacio').
+2. Añade las tildes faltantes (ej: 'pais' -> 'país', 'autocritica' -> 'autocrítica').
+3. Completa palabras que parezcan cortadas (ej: 'merec' -> 'merecen' o 'merecían' según el contexto).
+4. NO añadas contenido nuevo, no resumas, no cambies el significado. Solo corrige.
+5. Devuelve únicamente el texto corregido, sin ninguna introducción o comentario.
 
 Texto a corregir:
 ---
 """
         completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": prompt},
-                {"role": "user", "content": raw_text}
-            ],
-            model="llama-3.1-8b-instant",
-            temperature=0.1,
-            max_tokens=4000
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": raw_text}],
+            model="llama-3.1-8b-instant", temperature=0.1, max_tokens=4096
         )
         return completion.choices[0].message.content.strip()
     except Exception as e:
         st.warning(f"⚠️ No se pudo aplicar la corrección por IA. Mostrando transcripción original. Error: {e}")
         return raw_text
 
-# --- FUNCIONES DE ANÁLISIS ---
 def generate_summary(text, client):
     try:
         completion=client.chat.completions.create(messages=[{"role":"system","content":"Eres un analista de noticias experto. Crea un resumen ejecutivo conciso en un solo párrafo. Regla estricta: NO incluyas frases introductorias. Comienza directamente con el contenido."},{"role":"user","content":f"Genera un resumen ejecutivo en un párrafo (máx 150 palabras) de la transcripción. Empieza directamente, sin preámbulos.\n\nTranscripción:\n{text}"}],model="llama-3.1-8b-instant",temperature=0.3,max_tokens=500)
@@ -133,6 +126,36 @@ def answer_question(question, text, client, history):
         completion=client.chat.completions.create(messages=messages,model="llama-3.1-8b-instant",temperature=0.2,max_tokens=800)
         return completion.choices[0].message.content
     except Exception as e: return f"Error al procesar la pregunta: {e}"
+
+# --- FUNCIÓN RESTAURADA ---
+def extract_entities(text, client):
+    try:
+        completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": 'Analista de noticias de Colombia. Identifica personas, cargos y marcas. Devuelve un JSON con claves "people" (lista de objetos con "name", "role") y "brands" (lista de strings). Si no encuentras nada, devuelve listas vacías.'},
+                {"role": "user", "content": f"Analiza esta transcripción y extrae entidades en el formato JSON especificado.\n\n{text}"}
+            ],
+            model="llama-3.1-8b-instant", temperature=0.1, max_tokens=1500, response_format={"type": "json_object"}
+        )
+        data = json.loads(completion.choices[0].message.content)
+        return data.get("people", []), data.get("brands", [])
+    except Exception: return [], []
+
+def enrich_entities_with_timestamps(people, brands, segments):
+    enriched_people, enriched_brands = {}, {}
+    for person in people:
+        name = person.get("name", "").strip()
+        if name and name not in enriched_people: enriched_people[name] = {"details": person, "mentions": []}
+        for seg in segments:
+            if name and re.search(r'\b' + re.escape(name) + r'\b', seg['text'], re.I):
+                enriched_people[name]["mentions"].append({"start": seg['start'], "time": format_timestamp(seg['start']), "context": seg['text'].strip()})
+    for brand in brands:
+        name = brand.strip()
+        if name and name not in enriched_brands: enriched_brands[name] = {"mentions": []}
+        for seg in segments:
+            if name and re.search(r'\b' + re.escape(name) + r'\b', seg['text'], re.I):
+                enriched_brands[name]["mentions"].append({"start": seg['start'], "time": format_timestamp(seg['start']), "context": seg['text'].strip()})
+    return enriched_people, enriched_brands
 
 # --- INTERFAZ DE LA APP ---
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
@@ -171,18 +194,15 @@ if st.button("🚀 Iniciar Transcripción",type="primary",use_container_width=Tr
                     transcription=client.audio.transcriptions.create(file=(uploaded_file.name,audio_file.read()),model=model_option,temperature=temperature,language=language,response_format="verbose_json",prompt=prompt)
             os.unlink(tmp_path)
             
-            # --- PROCESO DE TRANSCRIPCIÓN DE DOS ETAPAS ---
             raw_text = transcription.text
             with st.spinner("🤖 Aplicando corrección y refinamiento con IA (Etapa 2/2)..."):
                 corrected_text = correct_transcription_with_llm(raw_text, client)
 
             st.session_state.transcription = corrected_text
-            # Guardamos la data original para timestamps, pero el texto a mostrar es el corregido
             st.session_state.transcription_data = transcription
             
             with st.spinner("🧠 Generando análisis sobre el texto corregido..."):
                 if enable_summary:st.session_state.summary=generate_summary(corrected_text,client)
-                # Las entidades se extraen del texto corregido para mayor precisión
                 if enable_entities:
                     people,brands=extract_entities(corrected_text,client)
                     st.session_state.people,st.session_state.brands=enrich_entities_with_timestamps(people,brands,transcription.segments)
@@ -199,18 +219,39 @@ if 'transcription' in st.session_state:
     tabs=st.tabs(tab_titles)
 
     with tabs[0]:
+        c1, c2 = st.columns([4, 1]);
+        with c1:
+            search_query=st.text_input("🔎 Buscar en transcripción corregida:",value=st.session_state.last_search,key=f"search_{st.session_state.search_counter}")
+            if search_query!=st.session_state.last_search:st.session_state.last_search=search_query;st.rerun()
+        with c2:
+            st.write("");
+            if st.button("🗑️ Limpiar",use_container_width=True,disabled=not search_query):st.session_state.last_search="";st.session_state.search_counter+=1;st.rerun()
+        
+        # --- BÚSQUEDA RESTAURADA ---
+        if search_query:
+            with st.expander("📍 Resultados de búsqueda", expanded=True):
+                # La búsqueda se hace sobre el texto corregido para ser consistente con lo que ve el usuario
+                pattern = re.compile(re.escape(search_query), re.IGNORECASE)
+                # Creamos párrafos del texto corregido para buscar
+                paragraphs = st.session_state.transcription.split('\n')
+                matching_lines = [p for p in paragraphs if pattern.search(p)]
+                
+                if not matching_lines: st.info("❌ No se encontraron coincidencias en la transcripción corregida.")
+                else:
+                    st.success(f"✅ {len(matching_lines)} coincidencia(s) encontrada(s)");
+                    for line in matching_lines:
+                        highlighted_text = pattern.sub(f"<span style='background-color:#fca311;color:#14213d;padding:2px 5px;border-radius:4px;font-weight:bold;'>\\g<0></span>", line)
+                        st.markdown(f"<div style='background-color:#1e3a5f;padding:0.8rem;border-radius:6px;border-left:4px solid #fca311;color:#fff;'>{highlighted_text}</div>", unsafe_allow_html=True)
+
         st.markdown("**📄 Transcripción completa y refinada por IA:**"); text_html=st.session_state.transcription.replace('\n','<br>')
+        if search_query: text_html=re.compile(re.escape(search_query), re.I).sub(f"<span style='background-color:#fca311;color:#14213d;padding:2px 5px;border-radius:4px;font-weight:bold;'>\\g<0></span>", text_html)
         st.markdown(f"<div style='background-color:#0E1117;color:#FAFAFA;border:1px solid #333;border-radius:10px;padding:1.5rem;max-height:500px;overflow-y:auto;font-family:\"Source Code Pro\",monospace;white-space:pre-wrap;'>{text_html}</div>", unsafe_allow_html=True);st.write("")
         d1,d2,d3,d4=st.columns([2,2,2,1.5]);
         d1.download_button("💾 TXT Corregido",st.session_state.transcription.encode('utf-8'),"transcripcion_corregida.txt",use_container_width=True)
         d2.download_button("💾 TXT Original (Whisper)", st.session_state.transcription_data.text.encode('utf-8'), "transcripcion_original.txt", use_container_width=True)
         d3.download_button("💾 SRT Subtítulos",export_to_srt(st.session_state.transcription_data).encode('utf-8'),"subtitulos.srt",use_container_width=True)
-        from streamlit.components.v1 import html
-        def create_copy_button(text_to_copy):
-            text_json = json.dumps(text_to_copy)
-            button_id = f"copy-btn-{hash(text_to_copy)}"
-            button_html = f"""<button id='{button_id}'>Copiar</button><script>document.getElementById('{button_id}').onclick=()=>{{navigator.clipboard.writeText({text_json}).then(()=>{{document.getElementById('{button_id}').innerText='Copiado!';setTimeout(()=>{{document.getElementById('{button_id}').innerText='Copiar'}},2000)}})}}</script>"""
-            html(button_html)
+        with d4:
+            components.html(f"""<button onclick='navigator.clipboard.writeText({json.dumps(st.session_state.transcription)})' style="width:100%;padding:0.25rem 0.5rem;border-radius:0.5rem;border:1px solid rgba(49,51,63,0.2);background-color:#FFF;color:#31333F;">📋 Copiar Todo</button>""", height=40)
 
     with tabs[1]:
         if 'summary' in st.session_state: st.markdown("### 📝 Resumen Ejecutivo"); st.markdown(st.session_state.summary); st.markdown("---")
@@ -233,7 +274,6 @@ if 'transcription' in st.session_state:
         with tabs[2]:
             st.info("Las marcas de tiempo corresponden al audio original y pueden no alinearse perfectamente con el texto corregido por la IA.", icon="💡")
             if st.session_state.get('people'):
-                # Código de entidades sin cambios
                 st.markdown("### 👤 Personas y Cargos");
                 for name, data in st.session_state.people.items():
                     st.markdown(f"**{name}** - *{data['details'].get('role', 'No especificado')}*")
@@ -243,7 +283,6 @@ if 'transcription' in st.session_state:
                                 c1,c2=st.columns([0.2,0.8]); c1.button(f"▶️ {m['time']}",key=f"p_{name}_{m['start']}",on_click=set_audio_time,args=(m['start'],)); c2.markdown(f"_{m['context']}_")
                 st.markdown("---")
             if st.session_state.get('brands'):
-                # Código de entidades sin cambios
                 st.markdown("### 🏢 Marcas Mencionadas")
                 for name, data in st.session_state.brands.items():
                     st.markdown(f"**{name}**")
@@ -258,4 +297,4 @@ if 'transcription' in st.session_state:
         pwd=st.session_state.password_correct; st.session_state.clear(); st.session_state.password_correct=pwd; st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.9.0 (Whisper + Llama 3.1 Correction)</strong></p><p style='font-size: 0.85rem;'>✨ Con Corrección de Transcripción por IA</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v4.0.0 (Whisper + Llama 3.1 Correction)</strong></p><p style='font-size: 0.85rem;'>✨ Versión Estable con Corrección por IA y Búsqueda Restaurada</p></div>""", unsafe_allow_html=True)
