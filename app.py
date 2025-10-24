@@ -145,15 +145,21 @@ def post_process_with_llama(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": """Eres un corrector experto de transcripciones en español. Tu única tarea es corregir errores específicos sin alterar el contenido original. Sigue estas reglas estrictamente:
-1.  **NO RESUMIR**: Devuelve el texto COMPLETO que recibes.
-2.  **NO CAMBIAR EL SIGNIFICADO**: Mantén el mensaje original intacto.
-3.  **NO AGREGAR NI QUITAR INFORMACIÓN**: No inventes ni elimines palabras.
-4.  **TAREA PRINCIPAL**: Corrige tildes faltantes (qué, cómo, está, etc.) y completa palabras cortadas (ej: "informaci" -> "información").
-5.  **SALIDA FINAL**: Devuelve ÚNICAMENTE el texto corregido, sin explicaciones ni comentarios."""},
-                {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No la resumas ni alteres su contenido:\n\n{transcription_text}"}
+                {"role": "system", "content": """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
+
+**REGLAS INVIOLABLES:**
+1.  **ACENTUACIÓN PRECISA:** Tu tarea principal es añadir tildes faltantes a palabras que inequívocamente las requieren (ej: `como` -> `cómo`, `esta` -> `está`, `mas` -> `más`).
+2.  **COMPLETAR PALABRAS:** Únicamente completarás palabras con terminaciones obvias y comunes en transcripciones (ej: `informaci` -> `información`, `tecnolog` -> `tecnología`).
+3.  **NO CAMBIAR PALABRAS VÁLIDAS:** Si una palabra ya es correcta y existe en el diccionario español, NO la modificarás bajo ninguna circunstancia.
+4.  **PROHIBIDO INVENTAR, OMITIR O REESCRIBIR:** No puedes añadir, eliminar ni cambiar el orden de las palabras. No puedes reescribir frases.
+5.  **DEVOLVER TEXTO ÍNTEGRO:** Siempre devolverás el texto completo, aplicando únicamente las correcciones permitidas.
+
+Tu salida debe ser únicamente el texto corregido."""},
+                {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
             ],
-            model="llama-3.1-8b-instant", temperature=0.1, max_tokens=4096
+            model="llama-3.1-8b-instant", 
+            temperature=0.0, # Temperatura CERO para máxima precisión y predictibilidad
+            max_tokens=4096
         )
         return chat_completion.choices[0].message.content.strip()
     except Exception as e:
@@ -193,28 +199,10 @@ def extract_people_and_roles(transcription_text, client):
                 {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión. Tu tarea es identificar CADA persona mencionada por su nombre completo en la transcripción y su rol o cargo si se especifica.
 
 REGLAS ESTRICTAS:
-1.  **SOLO PERSONAS**: Extrae únicamente nombres de individuos (ej: "Juan Pérez"). NO extraigas nombres de organizaciones, empresas o lugares.
-2.  **ROL EXACTO**: Si se menciona un cargo (ej: "presidente", "gerente", "ministra"), captúralo. Si no se menciona, usa el valor "No especificado". No inventes roles.
-3.  **CONTEXTO PRECISO**: El contexto debe ser la oración o frase exacta donde se menciona a la persona.
-4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "personas" que contenga una lista de objetos.
-
-EJEMPLO DE SALIDA:
-```json
-{
-  "personas": [
-    {
-      "name": "María Rojas",
-      "role": "Ministra de Salud",
-      "context": "La Ministra de Salud, María Rojas, anunció las nuevas medidas sanitarias."
-    },
-    {
-      "name": "Carlos Lugo",
-      "role": "No especificado",
-      "context": "También se contó con la participación de Carlos Lugo en el evento."
-    }
-  ]
-}
-```'''},
+1.  **SOLO PERSONAS**: Extrae únicamente nombres de individuos (ej: "Juan Pérez"). NO extraigas nombres de organizaciones.
+2.  **ROL EXACTO**: Si se menciona un cargo (ej: "presidente"), captúralo. Si no, usa "No especificado". No inventes roles.
+3.  **CONTEXTO PRECISO**: El contexto es la frase exacta donde se menciona a la persona.
+4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "personas".'''},
                 {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las personas y sus roles según tus reglas. Devuelve solo el JSON:\n\n{transcription_text}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"}
@@ -228,31 +216,13 @@ def extract_brands_and_entities(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión. Tu tarea es identificar CADA marca comercial, empresa, organización, institución (gubernamental o no) y ONG mencionada en el texto.
+                {"role": "system", "content": '''Eres un analista de inteligencia de alta precisión. Tu tarea es identificar CADA marca comercial, empresa, organización o institución mencionada en el texto.
 
 REGLAS ESTRICTAS:
-1.  **SOLO ORGANIZACIONES**: Extrae únicamente nombres de entidades (ej: "Google", "Ministerio de Educación", "Cruz Roja"). NO extraigas nombres de personas.
-2.  **TIPO DE ENTIDAD**: Clasifica la entidad en una categoría general como "Empresa", "Institución", "ONG", "Marca", etc.
-3.  **CONTEXTO PRECISO**: El contexto debe ser la oración o frase exacta donde se menciona la entidad.
-4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "entidades" que contenga una lista de objetos.
-
-EJEMPLO DE SALIDA:
-```json
-{
-  "entidades": [
-    {
-      "name": "Ecopetrol",
-      "type": "Empresa",
-      "context": "Las acciones de Ecopetrol subieron un 5% en la jornada de hoy."
-    },
-    {
-      "name": "Ministerio de Hacienda",
-      "type": "Institución",
-      "context": "El Ministerio de Hacienda publicó el nuevo decreto fiscal."
-    }
-  ]
-}
-```'''},
+1.  **SOLO ORGANIZACIONES**: Extrae únicamente nombres de entidades (ej: "Google", "Ministerio de Educación"). NO extraigas nombres de personas.
+2.  **TIPO DE ENTIDAD**: Clasifica la entidad como "Empresa", "Institución", "ONG", "Marca", etc.
+3.  **CONTEXTO PRECISO**: El contexto es la frase exacta donde se menciona la entidad.
+4.  **FORMATO JSON OBLIGATORIO**: La salida debe ser un objeto JSON válido con una clave "entidades".'''},
                 {"role": "user", "content": f"Analiza la siguiente transcripción y extrae las marcas y organizaciones según tus reglas. Devuelve solo el JSON:\n\n{transcription_text}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"}
@@ -331,21 +301,19 @@ with col2:
                 
                 with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
                     with open(tmp_file_path, "rb") as audio_file:
-                        # ***** INICIO DE LA SOLUCIÓN DE PRECISIÓN *****
                         spanish_prompt = (
                             "Esta es una transcripción profesional que requiere la máxima precisión. Transcribe absolutamente todo el audio de forma literal. "
                             "No omitas ninguna palabra, frase o segmento, incluso si el audio es poco claro o hay ruido de fondo. "
-                            "Tu objetivo es la exhaustividad total. Presta atención a las tildes (qué, cómo, por qué, está, más) y a la puntuación. "
-                            "No resumas ni omitas NADA."
+                            "Tu objetivo es la exhaustividad total. No resumas ni omitas NADA."
                         )
-                        # ***** FIN DE LA SOLUCIÓN DE PRECISIÓN *****
 
                         transcription = client.audio.transcriptions.create(
                             file=(uploaded_file.name, audio_file.read()),
                             model=model_option,
                             language=language,
                             response_format="verbose_json",
-                            prompt=spanish_prompt # <--- PROMPT MEJORADO APLICADO AQUÍ
+                            prompt=spanish_prompt,
+                            temperature=0.0 # Temperatura CERO para máxima precisión y literalidad
                         )
                 os.unlink(tmp_file_path)
                 
@@ -508,4 +476,4 @@ st.markdown("""
     <p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de post-procesamiento IA, corrección mejorada y análisis de marcas</p>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)```
