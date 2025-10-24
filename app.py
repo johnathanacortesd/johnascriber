@@ -280,18 +280,13 @@ with col1: uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3"
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
         
-        # --- CORRECCIÓN: Limpieza segura del estado de la sesión ---
-        # Borrar solo las claves de resultados anteriores, no todo el estado
-        keys_to_clear = [
-            "transcription", "transcription_data", "uploaded_audio_bytes", 
-            "summary", "quotes", "people", "brands", "qa_history",
-            "last_search", "search_counter"
-        ]
+        # Limpieza segura del estado de la sesión
+        keys_to_clear = ["transcription", "transcription_data", "uploaded_audio_bytes", "summary", "quotes", "people", "brands", "qa_history", "last_search"]
         for key in keys_to_clear:
             if key in st.session_state:
                 del st.session_state[key]
         
-        # Inicializar/resetear valores para la nueva transcripción
+        # Resetear/Inicializar valores para la nueva transcripción
         st.session_state.audio_start_time = 0
         st.session_state.search_counter = st.session_state.get('search_counter', 0) + 1
         st.session_state.qa_history = []
@@ -300,30 +295,30 @@ with col2:
             try:
                 file_bytes = uploaded_file.getvalue(); original_size = get_file_size_mb(file_bytes); is_video = os.path.splitext(uploaded_file.name)[1].lower() in ['.mp4', '.mpeg', '.webm']
                 if is_video and MOVIEPY_AVAILABLE and original_size > 25:
-                    with st.spinner(f"🎬 Video de {original_size:.2f} MB. Convirtiendo a audio..."): file_bytes, converted = convert_video_to_audio(file_bytes, uploaded_file.name);
+                    with st.spinner(f"🎬 Video de {original_size:.2f} MB. Convirtiendo..."): file_bytes, converted = convert_video_to_audio(file_bytes, uploaded_file.name);
                     if converted: st.success(f"✅ Convertido: {get_file_size_mb(file_bytes):.2f} MB")
                 if MOVIEPY_AVAILABLE and compress_audio_option:
                     with st.spinner("📦 Comprimiendo audio..."): size_before = get_file_size_mb(file_bytes); file_bytes = compress_audio(file_bytes, uploaded_file.name); st.success(f"✅ Comprimido: {size_before:.2f} MB → {get_file_size_mb(file_bytes):.2f} MB")
                 st.session_state.uploaded_audio_bytes = file_bytes; client = Groq(api_key=api_key)
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp: tmp.write(file_bytes); tmp_file_path = tmp.name
-                with st.spinner("🔄 Transcribiendo con IA... (puede tardar unos minutos)"):
+                with st.spinner("🔄 Transcribiendo con IA..."):
                     with open(tmp_file_path, "rb") as audio_file:
                         spanish_prompt = ("Transcripción precisa en español. Presta máxima atención a las tildes, puntuación (¿?, ¡!) y mayúsculas. Palabras clave a verificar: qué, cómo, por qué, cuándo, dónde, él, sí, más, está. Completa correctamente palabras como: fundación, información, situación, declaración, organización, política, compañía, economía, país, día, miércoles, sostenible. Transcribir textualmente sin omitir nada.")
                         transcription = client.audio.transcriptions.create(file=(uploaded_file.name, audio_file.read()), model=model_option, temperature=temperature, language=language, response_format="verbose_json", prompt=spanish_prompt if language == "es" else None)
                 os.unlink(tmp_file_path)
                 transcription_text = transcription.text
                 if enable_tilde_fix and language == "es":
-                    with st.spinner("✨ Aplicando correcciones de tildes..."):
-                        transcription_text = fix_spanish_encoding(transcription.text)
+                    with st.spinner("✨ Aplicando correcciones..."):
+                        transcription_text = fix_spanish_encoding(transcription_text)
                         if hasattr(transcription, 'segments'):
                             for segment in transcription.segments: segment['text'] = fix_spanish_encoding(segment['text'])
                 st.session_state.transcription, st.session_state.transcription_data = transcription_text, transcription
-                with st.spinner("🧠 Generando análisis inteligente..."):
+                with st.spinner("🧠 Generando análisis..."):
                     if enable_summary: st.session_state.summary = generate_summary(transcription_text, client)
                     if enable_quotes: st.session_state.quotes = extract_quotes(transcription.segments)
                     if enable_people: st.session_state.people = extract_people_and_roles(transcription_text, client)
                     if enable_brands: st.session_state.brands = extract_brands(transcription_text, client)
-                st.success("✅ ¡Transcripción y análisis completados!"); st.balloons()
+                st.success("✅ ¡Proceso completado!"); st.balloons()
             except Exception as e: st.error(f"❌ Error durante el proceso: {str(e)}")
 
 if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_state:
@@ -384,31 +379,40 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 type_badge = "🗣️ **Cita Textual**" if quote['type'] == 'quote' else "📢 **Declaración**"; st.markdown(type_badge)
                 col_q1, col_q2 = st.columns([0.12, 0.88])
                 with col_q1: st.button(f"▶️ {quote['time']}", key=f"quote_{idx}", on_click=set_audio_time, args=(quote['start'],))
-                with col_q2: st.markdown(f"*{quote['text']}*");
+                with col_q2: st.markdown(f"*{quote.get('text', 'Texto no disponible.')}*");
                 st.markdown("---")
     
     tab_index_counter = 3
     if 'people' in st.session_state:
         with tabs[tab_index_counter]:
             st.markdown("### 👥 Personas y Cargos Mencionados"); people_data = st.session_state.people
-            if people_data and "Error" not in people_data[0]['name']:
-                st.caption(f"Se identificaron {len(people_data)} personas clave.")
+            if people_data and isinstance(people_data, list):
+                # --- CORRECCIÓN: Bucle robusto para mostrar personas ---
                 for idx, person in enumerate(people_data):
-                    st.markdown(f"**👤 {person['name']}** - *{person.get('role', 'No especificado')}*")
-                    with st.expander("📝 Ver contexto", key=f"person_expander_{idx}"):
-                        st.markdown(f"> {person.get('context', 'Sin contexto disponible.')}")
+                    if isinstance(person, dict):
+                        name = person.get('name', 'Nombre no encontrado')
+                        if "Error" in name: continue
+                        role = person.get('role', 'No especificado')
+                        context = person.get('context', 'Sin contexto disponible.')
+                        st.markdown(f"**👤 {name}** - *{role}*")
+                        with st.expander("📝 Ver contexto", key=f"person_expander_{idx}"):
+                            st.markdown(f"> {context}")
             else: st.info("👤 No se identificaron personas o hubo un error en el análisis.")
         tab_index_counter += 1
 
     if 'brands' in st.session_state:
         with tabs[tab_index_counter]:
             st.markdown("### 🏢 Marcas y Empresas Mencionadas"); brands_data = st.session_state.brands
-            if brands_data and "Error" not in brands_data[0]['brand']:
-                st.caption(f"Se identificaron {len(brands_data)} marcas o empresas.")
+            if brands_data and isinstance(brands_data, list):
+                # --- CORRECCIÓN: Bucle robusto para mostrar marcas ---
                 for idx, item in enumerate(brands_data):
-                    st.markdown(f"**🏢 {item['brand']}**")
-                    with st.expander("📝 Ver contexto", key=f"brand_expander_{idx}"):
-                        st.markdown(f"> {item.get('context', 'Sin contexto disponible.')}")
+                    if isinstance(item, dict):
+                        brand = item.get('brand', 'Marca no encontrada')
+                        if "Error" in brand: continue
+                        context = item.get('context', 'Sin contexto disponible.')
+                        st.markdown(f"**🏢 {brand}**")
+                        with st.expander("📝 Ver contexto", key=f"brand_expander_{idx}"):
+                            st.markdown(f"> {context}")
             else: st.info("🏢 No se identificaron marcas o hubo un error en el análisis.")
 
     st.markdown("---")
@@ -419,4 +423,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.3.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con extracción de entidades mejorada y corrección de tildes avanzada</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.4.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con extracción de entidades robusta y corrección de tildes avanzada</p></div>""", unsafe_allow_html=True)
