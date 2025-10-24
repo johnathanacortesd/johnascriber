@@ -257,7 +257,7 @@ def extract_quotes(segments):
         text = seg['text'].strip(); text_lower = text.lower()
         has_quotes = '"' in text or '«' in text or '»' in text
         has_declaration = any(keyword in text_lower for keyword in quote_keywords)
-        if has_quotes or has_declaration:
+        if hasattr(seg, 'start') and (has_quotes or has_declaration):
             context_before = segments[i-1]['text'].strip() if i > 0 else ""
             context_after = segments[i+1]['text'].strip() if i < len(segments) - 1 else ""
             full_context = f"{context_before} {text} {context_after}".strip()
@@ -314,11 +314,13 @@ def get_extended_context(segments, match_index, context_range=2):
     context_segments = []
     for i in range(start_idx, end_idx):
         seg = segments[i]; is_match = (i == match_index)
-        context_segments.append({'text': seg['text'].strip(), 'time': format_timestamp(seg['start']), 'start': seg['start'], 'is_match': is_match})
+        if hasattr(seg, 'start') and hasattr(seg, 'text'):
+            context_segments.append({'text': seg['text'].strip(), 'time': format_timestamp(seg['start']), 'start': seg['start'], 'is_match': is_match})
     return context_segments
 
 def export_to_srt(data):
     srt_content = []
+    if not hasattr(data, 'segments'): return ""
     for i, seg in enumerate(data.segments, 1):
         start_time = timedelta(seconds=seg['start']); end_time = timedelta(seconds=seg['end'])
         start = f"{start_time.seconds // 3600:02}:{(start_time.seconds // 60) % 60:02}:{start_time.seconds % 60:02},{start_time.microseconds // 1000:03}"
@@ -449,8 +451,8 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.warning("⚠️ No hay archivo de audio disponible para reproducir.")
 
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo", "💬 Citas y Declaraciones"]
-    if 'people' in st.session_state: tab_titles.append("👥 Personas Clave")
-    if 'brands' in st.session_state: tab_titles.append("🏢 Marcas Mencionadas")
+    if enable_people: tab_titles.append("👥 Personas Clave")
+    if enable_brands: tab_titles.append("🏢 Marcas Mencionadas")
     
     tabs = st.tabs(tab_titles)
 
@@ -471,7 +473,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
                 st.session_state.search_counter += 1
                 st.rerun()
 
-        if search_query:
+        if search_query and hasattr(st.session_state.transcription_data, 'segments'):
             with st.expander("📍 Resultados de búsqueda con contexto extendido", expanded=True):
                 segments = st.session_state.transcription_data.segments; pattern = re.compile(re.escape(search_query), re.IGNORECASE); matching_indices = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
                 if not matching_indices:
@@ -494,7 +496,7 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             pattern = re.compile(re.escape(search_query), re.IGNORECASE)
             transcription_html = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\\g<0></span>', transcription_html)
         
-        st.markdown(f'<div style="{TRANSCRIPTION_BOX_STYLE}">{transcription_html}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="{TRANSCRIPTION_BOX_STYLE}" id="transcription-box">{transcription_html}</div>', unsafe_allow_html=True)
         st.write("")
         col_d1, col_d2, col_d3, col_d4 = st.columns([2, 2, 2, 1.5])
         with col_d1: st.download_button("💾 Descargar TXT Simple", st.session_state.transcription.encode('utf-8'), "transcripcion.txt", "text/plain; charset=utf-8", use_container_width=True)
@@ -563,51 +565,52 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
             st.info("💬 No se identificaron citas o declaraciones relevantes.")
     
     tab_index = 3
-    if 'people' in st.session_state:
+    if enable_people:
         with tabs[tab_index]:
             st.markdown("### 👥 Personas y Cargos Mencionados")
             people_data = st.session_state.get('people')
             
-            # --- INICIO DE LA CORRECCIÓN ---
-            # Primero, verificar si la lista 'people_data' tiene contenido.
-            if people_data:
-                # Si tiene contenido, ahora sí podemos revisar el primer elemento.
-                if "Error" in people_data[0].get('name', ''):
-                    # Caso 1: La lista contiene un mensaje de error.
-                    st.error(f"**{people_data[0].get('name', 'Error')}**: {people_data[0].get('role', 'Sin detalles.')}")
-                    st.info(f"Contexto del error: {people_data[0].get('context', 'No disponible.')}")
+            # --- INICIO DE LA CORRECCIÓN ROBUSTA ---
+            # 1. Verificar que 'people_data' es una LISTA y que NO está vacía.
+            if isinstance(people_data, list) and people_data:
+                first_item = people_data[0]
+                # 2. Verificar que el primer elemento es un diccionario antes de usar .get()
+                if isinstance(first_item, dict) and "Error" in first_item.get('name', ''):
+                    st.error(f"**{first_item.get('name', 'Error')}**: {first_item.get('role', 'Sin detalles.')}")
+                    st.info(f"Contexto del error: {first_item.get('context', 'No disponible.')}")
                 else:
-                    # Caso 2: La lista contiene datos válidos.
                     st.caption(f"Se identificaron {len(people_data)} personas clave.")
                     for i, person in enumerate(people_data):
-                        st.markdown(f"**👤 {person.get('name', 'Nombre no disponible')}**")
-                        st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;*Rol:* {person.get('role', 'No especificado')}")
-                        with st.expander("📝 Ver contexto", key=f"person_context_{i}"):
-                            st.markdown(f"> {person.get('context', 'Sin contexto disponible.')}")
+                        if isinstance(person, dict):
+                            st.markdown(f"**👤 {person.get('name', 'Nombre no disponible')}**")
+                            st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;*Rol:* {person.get('role', 'No especificado')}")
+                            with st.expander("📝 Ver contexto", key=f"person_context_{i}"):
+                                st.markdown(f"> {person.get('context', 'Sin contexto disponible.')}")
             else:
-                # Caso 3: La lista está vacía o no existe (None).
                 st.info("👤 No se identificaron personas o cargos específicos en el audio.")
-            # --- FIN DE LA CORRECCIÓN ---
+            # --- FIN DE LA CORRECCIÓN ROBUSTA ---
             tab_index += 1
 
-    if 'brands' in st.session_state:
+    if enable_brands:
         with tabs[tab_index]:
             st.markdown("### 🏢 Marcas Mencionadas")
             brands_data = st.session_state.get('brands')
             
-            # --- INICIO DE LA CORRECCIÓN (Aplicada también aquí por prevención) ---
-            if brands_data:
-                if "Error" in brands_data[0].get('brand', ''):
-                    st.error(f"**{brands_data[0].get('brand', 'Error')}**: {brands_data[0].get('context', 'Sin detalles.')}")
+            # --- INICIO DE LA CORRECCIÓN ROBUSTA ---
+            if isinstance(brands_data, list) and brands_data:
+                first_item = brands_data[0]
+                if isinstance(first_item, dict) and "Error" in first_item.get('brand', ''):
+                    st.error(f"**{first_item.get('brand', 'Error')}**: {first_item.get('context', 'Sin detalles.')}")
                 else:
                     st.caption(f"Se identificaron {len(brands_data)} marcas.")
                     for i, item in enumerate(brands_data):
-                        st.markdown(f"**🏢 {item.get('brand', 'Marca no disponible')}**")
-                        with st.expander("📝 Ver contexto", key=f"brand_context_{i}"):
-                            st.markdown(f"> {item.get('context', 'Sin contexto disponible.')}")
+                         if isinstance(item, dict):
+                            st.markdown(f"**🏢 {item.get('brand', 'Marca no disponible')}**")
+                            with st.expander("📝 Ver contexto", key=f"brand_context_{i}"):
+                                st.markdown(f"> {item.get('context', 'Sin contexto disponible.')}")
             else:
                 st.info("🏢 No se identificaron marcas o empresas en el audio.")
-            # --- FIN DE LA CORRECCIÓN ---
+            # --- FIN DE LA CORRECCIÓN ROBUSTA ---
 
 st.markdown("---")
 if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
@@ -624,7 +627,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.2.1 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v3.2.2 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de corrección post-IA mejorado, extracción de marcas y búsqueda contextual</p>
 </div>
 """, unsafe_allow_html=True)
