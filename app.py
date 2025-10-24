@@ -140,18 +140,18 @@ def format_transcription_with_timestamps(data):
 def fix_spanish_encoding(text):
     if not text: return text
     result = text
-
-encoding_fixes = {
-    'Ã¡': 'á', 
-    'Ã©': 'é', 
-    'Ã­': 'í', 
-    'Ã³': 'ó', 
-    'Ãº': 'ú', 
-    'Ã±': 'ñ', 
-    'Ã\'': 'Ñ', # <--- LÍNEA CORREGIDA (se añadió la barra invertida \)
-    'Â\u00bf': '\u00bf',  # ¿
-    'Â\u00a1': '\u00a1'   # ¡
-}
+    encoding_fixes = {
+        'Ã¡': 'á', 
+        'Ã©': 'é', 
+        'Ã­': 'í', 
+        'Ã³': 'ó', 
+        'Ãº': 'ú', 
+        'Ã±': 'ñ', 
+        'Ã\'': 'Ñ',  # <-- CORRECCIÓN 1: Se escapó la comilla simple
+        'Â\u00bf': '\u00bf',  # ¿
+        'Â\u00a1': '\u00a1'   # ¡
+    }
+    # <-- CORRECCIÓN 2: Se eliminó la indentación incorrecta de la siguiente línea
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
@@ -804,4 +804,4 @@ st.markdown("""
     <p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de post-procesamiento IA, corrección mejorada y análisis de marcas</p>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)```
