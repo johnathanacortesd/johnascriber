@@ -57,6 +57,10 @@ if 'audio_start_time' not in st.session_state:
 def set_audio_time(start_seconds):
     st.session_state.audio_start_time = int(start_seconds)
 
+# --- FUNCIÓN CALLBACK PARA LIMPIAR BÚSQUEDA ---
+def clear_search_callback():
+    st.session_state.search_input = ""
+
 try:
     api_key = st.secrets["GROQ_API_KEY"]
 except KeyError:
@@ -304,13 +308,11 @@ with col1:
     uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
-        # Limpiar estado anterior para una nueva transcripción
         for key in list(st.session_state.keys()):
             if key not in ['password_correct', 'password_attempted']:
                 del st.session_state[key]
         
         st.session_state.audio_start_time = 0
-        st.session_state.search_counter = 0
         st.session_state.qa_history = []
         
         with st.spinner("🔄 Procesando archivo..."):
@@ -340,7 +342,6 @@ with col2:
                     with st.spinner("🤖 Mejorando transcripción con IA..."):
                         transcription_text = post_process_with_llama(transcription_text, client)
                 
-                # Actualizar texto en segmentos para búsqueda precisa
                 for seg in transcription.segments:
                     seg['text'] = fix_spanish_encoding(seg['text'])
                 
@@ -357,7 +358,7 @@ with col2:
                 
                 st.success("✅ ¡Transcripción y análisis completados!")
                 st.balloons()
-                st.rerun() # Forzar recarga para mostrar resultados
+                st.rerun()
             except Exception as e:
                 st.error(f"❌ Error durante la transcripción: {e}")
 
@@ -366,14 +367,12 @@ if 'transcription' in st.session_state:
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
-    # --- Creación de Pestañas ---
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo"]
     if 'people' in st.session_state and st.session_state.people: tab_titles.append("👥 Personas Clave")
     if 'brands' in st.session_state and st.session_state.brands: tab_titles.append("🏢 Marcas")
     
     tabs = st.tabs(tab_titles)
     
-    # --- Pestaña 1: TRANSCRIPCIÓN ---
     with tabs[0]:
         HIGHLIGHT_STYLE = "background-color: #fca311; color: #14213d; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
         MATCH_LINE_STYLE = "background-color: #1e3a5f; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311; color: #ffffff;"
@@ -382,12 +381,10 @@ if 'transcription' in st.session_state:
 
         col_search1, col_search2 = st.columns([4, 1])
         with col_search1:
-            search_query = st.text_input("🔎 Buscar en la transcripción:", key=f"search_input_{st.session_state.get('search_counter', 0)}")
+            search_query = st.text_input("🔎 Buscar en la transcripción:", key="search_input")
         with col_search2:
-            st.write("") 
-            if st.button("🗑️ Limpiar", use_container_width=True, disabled=not search_query):
-                st.session_state[f"search_input_{st.session_state.get('search_counter', 0)}"] = ""
-                st.rerun()
+            st.write("")
+            st.button("🗑️ Limpiar", on_click=clear_search_callback, use_container_width=True, disabled=not search_query)
 
         if search_query:
             with st.expander("📍 Resultados de búsqueda con contexto", expanded=True):
@@ -424,7 +421,6 @@ if 'transcription' in st.session_state:
         with col_d3: st.download_button("💾 SRT Subtítulos", export_to_srt(st.session_state.transcription_data), "subtitulos.srt", use_container_width=True)
         with col_d4: create_copy_button(st.session_state.transcription)
 
-    # --- Pestaña 2: RESUMEN Y CHAT Q&A ---
     with tabs[1]:
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo")
@@ -464,7 +460,6 @@ if 'transcription' in st.session_state:
         else:
             st.info("📝 El resumen no fue generado. Activa la opción en el sidebar y vuelve a transcribir.")
     
-    # --- Pestañas Adicionales ---
     tab_index = 2
     if 'people' in st.session_state and st.session_state.people:
         with tabs[tab_index]:
@@ -490,7 +485,10 @@ if 'transcription' in st.session_state:
 # --- Pie de página y Limpieza ---
 st.markdown("---")
 if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
+    # Guardar estado de la contraseña antes de limpiar
+    password_correct = st.session_state.get('password_correct', False)
     st.session_state.clear()
+    st.session_state.password_correct = password_correct # Restaurar estado de login
     st.rerun()
 
 st.markdown("---")
@@ -499,4 +497,4 @@ st.markdown("""
     <p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de post-procesamiento IA, corrección mejorada y análisis de marcas</p>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)```
