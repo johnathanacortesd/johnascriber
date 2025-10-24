@@ -142,6 +142,10 @@ def get_file_size_mb(file_bytes):
 
 # --- FUNCIÓN DE POST-PROCESAMIENTO CON IA ---
 def post_process_with_llama(transcription_text, client):
+    # Esta función ahora puede recibir segmentos pequeños o el texto completo
+    if not transcription_text or not transcription_text.strip():
+        return transcription_text
+    
     try:
         chat_completion = client.chat.completions.create(
             messages=[
@@ -313,18 +317,37 @@ with col2:
                             language=language,
                             response_format="verbose_json",
                             prompt=spanish_prompt,
-                            temperature=0.0 # Temperatura CERO para máxima precisión y literalidad
+                            temperature=0.0
                         )
                 os.unlink(tmp_file_path)
+
+                # --- MODIFICACIÓN CLAVE: PROCESAR CADA SEGMENTO ---
+                # Ahora procesamos cada segmento individualmente para que la búsqueda
+                # y la transcripción completa usen el mismo texto limpio.
+                progress_text = "🤖 Mejorando transcripción con IA..." if enable_llama_postprocess else "🧹 Limpiando transcripción..."
+                with st.spinner(progress_text):
+                    # Usamos una barra de progreso para dar feedback al usuario
+                    progress_bar = st.progress(0, text=f"Procesando segmento 0/{len(transcription.segments)}")
+                    
+                    for i, seg in enumerate(transcription.segments):
+                        # 1. Aplicar la corrección de codificación y reglas básicas
+                        cleaned_text = fix_spanish_encoding(seg['text'])
+                        
+                        # 2. Si está habilitado, aplicar el post-procesamiento con IA
+                        if enable_llama_postprocess:
+                            cleaned_text = post_process_with_llama(cleaned_text, client)
+                        
+                        # 3. Actualizar el texto del segmento con la versión limpia
+                        seg['text'] = cleaned_text
+                        
+                        # Actualizar la barra de progreso
+                        progress_bar.progress((i + 1) / len(transcription.segments), text=f"Procesando segmento {i+1}/{len(transcription.segments)}")
+
+                # --- MODIFICACIÓN CLAVE: CONSTRUIR EL TEXTO COMPLETO DESDE LOS SEGMENTOS LIMPIOS ---
+                # La transcripción completa ahora es la unión de los segmentos ya procesados.
+                transcription_text = "\n".join([seg['text'].strip() for seg in transcription.segments])
                 
-                transcription_text = fix_spanish_encoding(transcription.text)
-                if enable_llama_postprocess:
-                    with st.spinner("🤖 Mejorando transcripción con IA..."):
-                        transcription_text = post_process_with_llama(transcription_text, client)
-                
-                for seg in transcription.segments:
-                    seg['text'] = fix_spanish_encoding(seg['text'])
-                
+                # Almacenar los datos procesados en el estado de la sesión
                 st.session_state.transcription = transcription_text
                 st.session_state.transcription_data = transcription
                 
@@ -341,6 +364,7 @@ with col2:
                 st.rerun()
             except Exception as e:
                 st.error(f"❌ Error durante la transcripción: {e}")
+
 
 if 'transcription' in st.session_state:
     st.markdown("---")
@@ -366,6 +390,7 @@ if 'transcription' in st.session_state:
             st.write("")
             st.button("🗑️ Limpiar", on_click=clear_search_callback, use_container_width=True, disabled=not search_query)
 
+        # Ahora la búsqueda ya opera sobre los segmentos limpios, por lo que será consistente.
         if search_query:
             with st.expander("📍 Resultados de búsqueda con contexto", expanded=True):
                 segments = st.session_state.transcription_data.segments
@@ -473,7 +498,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.2.0 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v3.2.1 (Modelo whisper-large-v3 | llama-3.1-8b-instant)</strong> - Desarrollado por Johnathan Cortés 🤖</p>
     <p style='font-size: 0.85rem;'>✨ Con sistema de post-procesamiento IA, corrección mejorada y análisis de marcas</p>
 </div>
-""", unsafe_allow_html=True)```
+""", unsafe_allow_html=True)
