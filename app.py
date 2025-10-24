@@ -67,43 +67,68 @@ except KeyError:
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- DICCIONARIO COMPLETO Y MEJORADO DE CORRECCIONES ESPAÑOLAS ---
+# --- DICCIONARIO DE CORRECCIONES AMPLIADO Y MEJORADO ---
 SPANISH_WORD_CORRECTIONS = {
-    r'\bfundaci(?!ón\b)\b': 'fundación', r'\bFundaci(?!ón\b)\b': 'Fundación',
-    r'\binformaci(?!ón\b)\b': 'información', r'\bInformaci(?!ón\b)\b': 'Información',
-    r'\bsituaci(?!ón\b)\b': 'situación', r'\bSituaci(?!ón\b)\b': 'Situación',
-    r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\bDeclaraci(?!ón\b)\b': 'Declaración',
-    r'\bnaci(?!ón\b)\b': 'nación', r'\bNaci(?!ón\b)\b': 'Nación',
-    r'\bpoblaci(?!ón\b)\b': 'población', r'\bPoblaci(?!ón\b)\b': 'Población',
-    r'\breuni(?!ón\b)\b': 'reunión', r'\bReuni(?!ón\b)\b': 'Reunión',
-    r'\bopini(?!ón\b)\b': 'opinión', r'\bOpini(?!ón\b)\b': 'Opinión',
-    r'\bresoluci(?!ón\b)\b': 'resolución', r'\bResoluci(?!ón\b)\b': 'Resolución',
-    r'\borganizaci(?!ón\b)\b': 'organización', r'\bOrganizaci(?!ón\b)\b': 'Organización',
-    r'\bprotecci(?!ón\b)\b': 'protección', r'\bProtecci(?!ón\b)\b': 'Protección',
-    r'\bparticipaci(?!ón\b)\b': 'participación', r'\bParticipaci(?!ón\b)\b': 'Participación',
-    r'\binvestigaci(?!ón\b)\b': 'investigación', r'\bInvestigaci(?!ón\b)\b': 'Investigación',
-    r'\beducaci(?!ón\b)\b': 'educación', r'\bEducaci(?!ón\b)\b': 'Educación',
-    r'\bsanci(?!ón\b)\b': 'sanción', r'\bSanci(?!ón\b)\b': 'Sanción',
-    r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bComunicaci(?!ón\b)\b': 'Comunicación',
-    r'\boperaci(?!ón\b)\b': 'operación', r'\bOperaci(?!ón\b)\b': 'Operación',
-    r'\brelaci(?!ón\b)\b': 'relación', r'\bRelaci(?!ón\b)\b': 'Relación',
+    # Errores comunes de transcripción (ej: "S Natalia" -> "Sí, Natalia")
+    r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
+
+    # Palabras cortadas terminadas en -ción
     r'\badministraci(?!ón\b)\b': 'administración', r'\bAdministraci(?!ón\b)\b': 'Administración',
+    r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bComunicaci(?!ón\b)\b': 'Comunicación',
+    r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\bDeclaraci(?!ón\b)\b': 'Declaración',
+    r'\bdonaci(?!ón\b)\b': 'donación', r'\bDonaci(?!ón\b)\b': 'Donación',
+    r'\beducaci(?!ón\b)\b': 'educación', r'\bEducaci(?!ón\b)\b': 'Educación',
+    r'\bfundaci(?!ón\b)\b': 'fundación', r'\bFundaci(?!ón\b)\b': 'Fundación',
     r'\bimplementaci(?!ón\b)\b': 'implementación', r'\bImplementaci(?!ón\b)\b': 'Implementación',
-    r'\bpolític\b': 'política', r'\bPolític\b': 'Política',
-    r'\bcompañí\b': 'compañía', r'\bCompañí\b': 'Compañía',
-    r'\beconomí\b': 'economía', r'\bEconomí\b': 'Economía',
-    r'\benergí\b': 'energía', r'\bEnergí\b': 'Energía',
-    r'\bgeografí\b': 'geografía', r'\bGeografí\b': 'Geografía',
-    r'\bpaí\b': 'país', r'\bPaí\b': 'País',
+    r'\binformaci(?!ón\b)\b': 'información', r'\bInformaci(?!ón\b)\b': 'Información',
+    r'\binscripci(?!ón\b)\b': 'inscripción', r'\bInscripci(?!ón\b)\b': 'Inscripción',
+    r'\binvestigaci(?!ón\b)\b': 'investigación', r'\bInvestigaci(?!ón\b)\b': 'Investigación',
+    r'\bnaci(?!ón\b)\b': 'nación', r'\bNaci(?!ón\b)\b': 'Nación',
+    r'\bnavegaci(?!ón\b)\b': 'navegación', r'\bNavegaci(?!ón\b)\b': 'Navegación',
+    r'\boperaci(?!ón\b)\b': 'operación', r'\bOperaci(?!ón\b)\b': 'Operación',
+    r'\bopini(?!ón\b)\b': 'opinión', r'\bOpini(?!ón\b)\b': 'Opinión',
+    r'\borganizaci(?!ón\b)\b': 'organización', r'\bOrganizaci(?!ón\b)\b': 'Organización',
+    r'\bparticipaci(?!ón\b)\b': 'participación', r'\bParticipaci(?!ón\b)\b': 'Participación',
+    r'\bpoblaci(?!ón\b)\b': 'población', r'\bPoblaci(?!ón\b)\b': 'Población',
+    r'\bprotecci(?!ón\b)\b': 'protección', r'\bProtecci(?!ón\b)\b': 'Protección',
+    r'\brelaci(?!ón\b)\b': 'relación', r'\bRelaci(?!ón\b)\b': 'Relación',
+    r'\breuni(?!ón\b)\b': 'reunión', r'\bReuni(?!ón\b)\b': 'Reunión',
+    r'\bresoluci(?!ón\b)\b': 'resolución', r'\bResoluci(?!ón\b)\b': 'Resolución',
+    r'\bsanci(?!ón\b)\b': 'sanción', r'\bSanci(?!ón\b)\b': 'Sanción',
+    r'\bsituaci(?!ón\b)\b': 'situación', r'\bSituaci(?!ón\b)\b': 'Situación',
+    
+    # Palabras cortadas terminadas en -ía, -ica, -ico
+    r'\bCancerolog(?!ía\b)\b': 'Cancerología', r'\bCancerolog(?!ía\b)\b': 'Cancerología',
+    r'\bcompañí(?!a\b)\b': 'compañía', r'\bCompañí(?!a\b)\b': 'Compañía',
+    r'\beconomí(?!a\b)\b': 'economía', r'\bEconomí(?!a\b)\b': 'Economía',
+    r'\benergí(?!a\b)\b': 'energía', r'\bEnergí(?!a\b)\b': 'Energía',
+    r'\bgeografí(?!a\b)\b': 'geografía', r'\bGeografí(?!a\b)\b': 'Geografía',
+    r'\bmetodolog(?!ía\b)\b': 'metodología', r'\bMetodolog(?!ía\b)\b': 'Metodología',
+    r'\boncol(?!ógica\b)\b': 'oncológica', r'\bOncol(?!ógica\b)\b': 'Oncológica',
+    r'\bpolític(?!a\b)\b': 'política', r'\bPolític(?!a\b)\b': 'Política',
+    r'\bRepúblic(?!a\b)\b': 'República', r'\brepúblic(?!a\b)\b': 'república',
+    r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bTecnolog(?!ía\b)\b': 'Tecnología',
+
+    # Nombres propios y otras palabras con tildes
+    r'\bAméric(?!a\b)\b': 'América',
+    r'\bBogot(?!á\b)\b': 'Bogotá',
+    r'\bMéxic(?!o\b)\b': 'México',
+    r'\bPer\b': 'Perú',
+    r'\badem(?!ás\b)\b': 'además', r'\bAdem(?!ás\b)\b': 'Además',
+    r'\btambi(?!én\b)\b': 'también', r'\bTambi(?!én\b)\b': 'También',
+    r'\búltim(?!o\b)\b': 'último', r'\bÚltim(?!o\b)\b': 'Último',
+
+    # Palabras cortadas varias
     r'\bdí\b': 'día', r'\bDí\b': 'Día',
     r'\bmiércole\b': 'miércoles', r'\bMiércole\b': 'Miércoles',
     r'\bdocumenta\b': 'documental', r'\bDocumenta\b': 'Documental',
     r'\bsostenib\b': 'sostenible', r'\bSostenib\b': 'Sostenible',
     r'\bentretenimient\b': 'entretenimiento', r'\bEntretenimient\b': 'Entretenimiento',
+
+    # Correcciones de interrogativas y diacríticos
     r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué',
     r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde',
-    r'\b(E|e)l(?=\s[A-ZÁÉÍÓÚÑ])': r'\1l', r'\b(E|e)l\s(es|fue|será)\b': r'\1l \2',
-    r'\b(S|s)i(?=,?\s[A-ZÁÉÍÓÚÑ])': r'\1í', r'\b(M|m)as\b': r'\1ás', r'\b(S|s)olo\b': r'\1ólo',
+    r'\b(E|e)l\s(es|fue|será)\b': r'\1l \2', r'\b(M|m)as\b': r'\1ás',
 }
 
 # --- FUNCIONES AUXILIARES ---
@@ -291,7 +316,6 @@ with col2:
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp: tmp.write(file_bytes); tmp_file_path = tmp.name
                 with st.spinner("🔄 Transcribiendo con IA... (puede tardar unos minutos)"):
                     with open(tmp_file_path, "rb") as audio_file:
-                        # --- CORRECCIÓN: Prompt para Whisper acortado para cumplir con el límite de la API ---
                         spanish_prompt = (
                             "Transcripción precisa en español. Presta máxima atención a las tildes, puntuación (¿?, ¡!) y mayúsculas. "
                             "Palabras clave a verificar: qué, cómo, por qué, cuándo, dónde, él, sí, más, está. "
@@ -418,4 +442,4 @@ if 'transcription' in st.session_state and 'uploaded_audio_bytes' in st.session_
         st.rerun()
 
 st.markdown("---")
-st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v2.9.0 (Modelo whisper-large-v3 | llama3-70b-8192)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con búsqueda contextual mejorada, Q&A interactivo y extracción de entidades en español</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666;'><p><strong>Transcriptor Pro - Johnascriptor - v3.0.0 (Modelo whisper-large-v3 | llama3-70b-8192)</strong> - Desarrollado por Johnathan Cortés 🤖</p><p style='font-size: 0.85rem;'>✨ Con sistema de corrección post-IA mejorado y búsqueda contextual</p></div>""", unsafe_allow_html=True)
