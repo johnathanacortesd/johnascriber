@@ -378,7 +378,12 @@ with col2:
             
             with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
                 with open(tmp_path, "rb") as audio_file:
-                    prompt = "Transcripción profesional que requiere máxima precisión. Transcribe de forma literal, sin omitir nada."
+                    # --- MODIFICACIÓN AQUÍ: Prompt mejorado ---
+                    prompt = (
+                        "El objetivo es una transcripción literal y exhaustiva. Transcribe cada palabra, incluyendo titubeos, "
+                        "repeticiones y falsos inicios. No resumas, corrijas o parafrasees a los hablantes. "
+                        "La salida debe ser un reflejo textual y fiel del audio."
+                    )
                     transcription = client.audio.transcriptions.create(
                         file=(uploaded_file.name, audio_file.read()), model=model_option, language=language,
                         response_format="verbose_json", prompt=prompt, temperature=0.0
@@ -462,7 +467,6 @@ if 'transcription' in st.session_state:
             st.markdown("---")
             st.markdown("### 💭 Haz preguntas sobre el contenido")
             
-            # --- MODIFICACIÓN AQUÍ: Historial visible por defecto ---
             if st.session_state.qa_history:
                 st.markdown("#### 📚 Historial de conversación")
                 for i, qa in enumerate(st.session_state.qa_history):
@@ -515,7 +519,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.4.0 (whisper-large-v3 | llama-3.1-8b-instant)</strong> - por Johnathan Cortés 🤖</p>
-    <p style='font-size: 0.85rem;'>✨ Con optimización de audio, post-procesamiento IA y análisis de entidades</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v3.5.0 (whisper-large-v3 | llama-3.1-8b-instant)</strong> - por Johnathan Cortés 🤖</p>
+    <p style='font-size: 0.85rem;'>✨ Con prompt de transcripción mejorado para máxima fidelidad</p>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)```
