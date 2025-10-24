@@ -141,8 +141,15 @@ def fix_spanish_encoding(text):
     if not text: return text
     result = text
     encoding_fixes = {
-        'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 
-        'Ã±': 'ñ', 'Ã'': 'Ñ', 'Â¿': '¿', 'Â¡': '¡'
+        'Ã¡': 'á', 
+        'Ã©': 'é', 
+        'Ã­': 'í', 
+        'Ã³': 'ó', 
+        'Ãº': 'ú', 
+        'Ã±': 'ñ', 
+        'Ã'': 'Ñ', 
+        'Â\u00bf': '\u00bf',  # ¿
+        'Â\u00a1': '\u00a1'   # ¡
     }
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
