@@ -329,11 +329,23 @@ with col2:
                     tmp.write(file_bytes)
                     tmp_file_path = tmp.name
                 
-                with st.spinner("🔄 Transcribiendo con IA..."):
+                with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
                     with open(tmp_file_path, "rb") as audio_file:
+                        # ***** INICIO DE LA SOLUCIÓN DE PRECISIÓN *****
+                        spanish_prompt = (
+                            "Esta es una transcripción profesional que requiere la máxima precisión. Transcribe absolutamente todo el audio de forma literal. "
+                            "No omitas ninguna palabra, frase o segmento, incluso si el audio es poco claro o hay ruido de fondo. "
+                            "Tu objetivo es la exhaustividad total. Presta atención a las tildes (qué, cómo, por qué, está, más) y a la puntuación. "
+                            "No resumas ni omitas NADA."
+                        )
+                        # ***** FIN DE LA SOLUCIÓN DE PRECISIÓN *****
+
                         transcription = client.audio.transcriptions.create(
-                            file=(uploaded_file.name, audio_file.read()), model=model_option, language=language,
-                            response_format="verbose_json"
+                            file=(uploaded_file.name, audio_file.read()),
+                            model=model_option,
+                            language=language,
+                            response_format="verbose_json",
+                            prompt=spanish_prompt # <--- PROMPT MEJORADO APLICADO AQUÍ
                         )
                 os.unlink(tmp_file_path)
                 
@@ -485,10 +497,9 @@ if 'transcription' in st.session_state:
 # --- Pie de página y Limpieza ---
 st.markdown("---")
 if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
-    # Guardar estado de la contraseña antes de limpiar
     password_correct = st.session_state.get('password_correct', False)
     st.session_state.clear()
-    st.session_state.password_correct = password_correct # Restaurar estado de login
+    st.session_state.password_correct = password_correct
     st.rerun()
 
 st.markdown("---")
