@@ -100,12 +100,12 @@ def fix_spanish_encoding(text):
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
-### MEJORA: Lógica de conversión de audio definitiva para solucionar el error 'video_fps'.
+### MEJORA: Lógica de conversión de audio con conversión explícita a MONO.
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
     if not MOVIEPY_AVAILABLE:
         return file_bytes, False, "MoviePy no disponible."
 
-    st.info(f"Iniciando optimización para '{filename}'...")
+    st.info(f"Iniciando estandarización de '{filename}' para la IA...")
     original_size = len(file_bytes) / (1024 * 1024)
     file_ext = os.path.splitext(filename)[1].lower()
     
@@ -117,33 +117,35 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
     
     try:
         audio_clip = None
-        # Intento 1: Abrir como archivo de audio.
         try:
             audio_clip = AudioFileClip(input_path)
-            st.info("Archivo procesado como audio directo.")
+            st.info("Archivo procesado como audio.")
         except Exception:
             st.warning("No se pudo abrir como audio, intentando como video...")
-            # Intento 2: Si falla, abrir como archivo de video y extraer el audio.
             video_clip = VideoFileClip(input_path)
-            if video_clip.audio is None:
-                raise ValueError("El archivo de video no contiene una pista de audio.")
+            if video_clip.audio is None: raise ValueError("El archivo de video no contiene audio.")
             audio_clip = video_clip.audio
-            st.info("Archivo procesado como video. Extrayendo audio...")
+            st.info("Audio extraído del video.")
         
-        # Escribir el archivo de audio optimizado
-        audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000)
+        # Estandarización: 16kHz, 1 canal (Mono), 96kbps
+        audio_clip.write_audiofile(
+            output_path, 
+            codec='libmp3lame', 
+            bitrate=target_bitrate, 
+            fps=16000, 
+            nchannels=1 # Forzar a mono para máxima precisión y eficiencia
+        )
         audio_clip.close()
 
         with open(output_path, 'rb') as f:
             mp3_bytes = f.read()
             
         final_size = len(mp3_bytes) / (1024 * 1024)
-        reduction = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
-        msg = f"✅ Archivo optimizado: {original_size:.2f} MB → {final_size:.2f} MB ({reduction:.1f}% menos)"
+        msg = f"✅ Audio estandarizado a 16kHz/Mono: {original_size:.2f} MB → {final_size:.2f} MB"
         return mp3_bytes, True, msg
         
     except Exception as e:
-        msg = f"⚠️ Falló la optimización de audio: **{str(e)}**. Se usará el archivo original."
+        msg = f"⚠️ Falló la estandarización de audio: **{str(e)}**. Se usará el archivo original."
         return file_bytes, False, msg
         
     finally:
@@ -188,28 +190,45 @@ def answer_question(question, text, client, history, model):
     messages.append({"role": "user", "content": f"Transcripción:\n---\n{text}\n---\nPregunta: {question}"})
     return robust_llama_completion(client, messages, model=model, temperature=0.2, max_tokens=2048) or "No se pudo procesar la pregunta."
 
+### MEJORA: Prompt de extracción de entidades reforzado y lógica de parseo tolerante a fallos.
 def extract_all_entities(text, client, model):
     messages = [
         {"role": "system", "content": """
 Eres un sistema de extracción de entidades (NER) de alta precisión. Analiza el texto y extrae TODAS las entidades mencionadas, clasificándolas en las siguientes categorías: 'Persona', 'Organización', 'Lugar', 'Marca', 'Cargo'.
 REGLAS ESTRICTAS:
 1.  **CATEGORÍAS:**
-    -   **Persona:** Nombres completos de individuos (ej. "Juan Pérez", "Dra. Ana García").
-    -   **Organización:** Nombres de empresas, hospitales, universidades, instituciones (ej. "Hospital General", "Universidad Nacional", "Google").
-    -   **Lugar:** Nombres de ciudades, países, regiones (ej. "Bogotá", "Colombia").
-    -   **Marca:** Nombres de productos o servicios comerciales (ej. "Coca-Cola", "iPhone").
-    -   **Cargo:** Títulos o roles profesionales (ej. "presidente", "gerente", "doctor", "rector").
-2.  **CONTEXTO:** Proporciona la frase exacta donde se menciona la entidad.
-3.  **FORMATO:** Responde únicamente con un objeto JSON válido con una clave "entidades" que contenga una lista de objetos.
-4.  Si no encuentras entidades, devuelve: {"entidades": []}
+    -   **Persona:** Nombres de individuos (ej. "Juan Pérez").
+    -   **Organización:** Nombres de empresas, hospitales, universidades, etc. (ej. "Hospital General", "Google").
+    -   **Lugar:** Nombres de ciudades, países (ej. "Bogotá").
+    -   **Marca:** Nombres de productos comerciales (ej. "iPhone").
+    -   **Cargo:** Títulos profesionales (ej. "presidente", "doctor").
+2.  **FORMATO OBLIGATORIO:** Responde únicamente con un objeto JSON. La clave principal DEBE ser "entidades". Cada objeto en la lista DEBE usar las claves en inglés: "name", "category", y "context".
+    Ejemplo de formato:
+    {
+      "entidades": [
+        { "name": "Dr. Carlos Rivas", "category": "Persona", "context": "El Dr. Carlos Rivas mencionó los avances." }
+      ]
+    }
+3.  Si no encuentras entidades, devuelve: {"entidades": []}
 """},
         {"role": "user", "content": f"Extrae todas las entidades del siguiente texto:\n\n{text[:8000]}"}
     ]
-    response_json = robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=4096, response_format={"type": "json_object"})
+    response_json_str = robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=4096, response_format={"type": "json_object"})
+    if not response_json_str: return []
     try:
-        return json.loads(response_json).get('entidades', []) if response_json else []
-    except (json.JSONDecodeError, TypeError): return []
-
+        data = json.loads(response_json_str)
+        # Limpieza y validación de la respuesta del modelo
+        validated_entities = []
+        for entity in data.get('entidades', []):
+            # Lógica tolerante a fallos: busca claves en inglés y español
+            name = entity.get('name') or entity.get('nombre')
+            category = entity.get('category') or entity.get('categoría')
+            context = entity.get('context') or entity.get('contexto')
+            if name and category: # Solo añade la entidad si tiene nombre y categoría
+                validated_entities.append({'name': name, 'category': category, 'context': context})
+        return validated_entities
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 # --- FUNCIONES DE EXPORTACIÓN Y BÚSQUEDA ---
 def get_extended_context(segments, match_index, context_range=2):
@@ -237,7 +256,7 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    model_option = st.selectbox("Modelo de Transcripción", ["whisper-large-v3"], help="El modelo más preciso para transcripción.")
+    model_option = st.selectbox("Modelo de Transcripción", ["whisper-large-v3"])
     language = st.selectbox("Idioma del Audio", ["es"])
     
     st.markdown("---")
@@ -246,7 +265,7 @@ with st.sidebar:
     
     enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True)
     enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True)
-    enable_entities = st.checkbox("📊 Extraer Entidades (Personas, Marcas, etc.)", value=True)
+    enable_entities = st.checkbox("📊 Extraer Entidades", value=True)
     
     st.markdown("---")
     st.subheader("🔍 Búsqueda Contextual")
@@ -254,7 +273,7 @@ with st.sidebar:
     
     st.markdown("---")
     if MOVIEPY_AVAILABLE:
-        st.success("✅ **Optimización de Audio Activada:** Convierte videos y audios a MP3 optimizado.")
+        st.success("✅ **Estandarización de Audio Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
     else:
         st.warning("⚠️ **Optimización Desactivada:** `moviepy` no está instalado.")
 
@@ -269,9 +288,9 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
     try:
         file_bytes = uploaded_file.getvalue()
         
-        with st.spinner("🔄 Optimizando archivo..."):
+        with st.spinner("🔄 Estandarizando audio para máxima precisión..."):
             processed_bytes, was_converted, conv_message = convert_to_optimized_mp3(file_bytes, uploaded_file.name)
-            st.info(conv_message) # Muestra el mensaje de éxito o error de la conversión
+            st.info(conv_message)
         st.session_state.uploaded_audio_bytes = processed_bytes
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
@@ -321,11 +340,11 @@ if 'transcription' in st.session_state:
     
     # Pestaña 1: Transcripción
     with tabs[0]:
-        ### MEJORA: Estilos de CSS para fondo negro, letra blanca y mejor legibilidad.
+        ### MEJORA: Estilos CSS actualizados para fondo negro y letra blanca.
         HIGHLIGHT_STYLE = "background-color: #FFD700; color: black; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
         MATCH_STYLE = "background-color: #1a1a2e; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311;"
         CONTEXT_STYLE = "background-color: #1f1f1f; padding: 0.6rem; border-radius: 4px;"
-        BOX_STYLE = "background-color: black; color: white; border: 1px solid #444; border-radius: 10px; padding: 1.5rem; height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; line-height: 1.75; font-size: 1rem;"
+        BOX_STYLE = "background-color: #000000; color: #FFFFFF; border: 1px solid #444; border-radius: 10px; padding: 1.5rem; height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; line-height: 1.75; font-size: 1rem;"
         
         c1, c2 = st.columns([4, 1])
         search_query = c1.text_input("🔎 Buscar en la transcripción:", key="search_input")
@@ -399,7 +418,8 @@ if 'transcription' in st.session_state:
             else:
                 st.success(f"Mostrando {len(filtered_entities)} de {len(entities)} entidades totales.")
                 for entity in filtered_entities:
-                    entity_name, entity_cat = entity.get('name', 'N/A'), entity.get('category', 'N/A')
+                    ### MEJORA: La lógica de parseo en `extract_all_entities` asegura que estos campos ya no sean N/A.
+                    entity_name, entity_cat = entity.get('name'), entity.get('category')
                     st.markdown(f"**{entity_name}** | **Categoría:** `{entity_cat}`")
                     
                     with st.expander("Ver contexto y menciones en audio"):
@@ -428,7 +448,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 
 st.markdown("""
 <div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.3.0</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión Definitiva | 👁️ Legibilidad Mejorada</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.4.0</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Estandarización de Audio | 📊 NER Robusto</p>
 </div>
 """, unsafe_allow_html=True)
