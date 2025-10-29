@@ -1,3 +1,5 @@
-streamlit>=1.32.0
-groq>=0.4.0
-pydub>=0.25.1
+streamlit==1.31.0
+groq==0.13.0
+moviepy==1.0.3
+imageio-ffmpeg==0.4.9
+imageio-ffmpeg
