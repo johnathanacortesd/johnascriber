@@ -7,15 +7,21 @@ import re
 import time
 import streamlit.components.v1 as components
 from datetime import timedelta
+import hashlib
+import logging
+
+# --- CONFIGURACIÓN DE LOGS ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
-    from moviepy.audio.fx.all import audio_monize
     MOVIEPY_AVAILABLE = True
 except ImportError:
+    st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará. Instala con: pip install moviepy")
     MOVIEPY_AVAILABLE = False
 
-# --- LÓGICA DE AUTENTICACIÓN (Sin cambios) ---
+# --- LÓGICA DE AUTENTICACIÓN ---
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
@@ -23,29 +29,19 @@ def validate_password():
     if st.session_state.get("password") == st.secrets.get("PASSWORD"):
         st.session_state.password_correct = True
         st.session_state.password_attempted = False
-        if "password" in st.session_state:
-            del st.session_state["password"]
+        if "password" in st.session_state: del st.session_state["password"]
     else:
         st.session_state.password_correct = False
         st.session_state.password_attempted = True
 
 if not st.session_state.password_correct:
-    st.markdown("""
-    <div style='text-align: center; padding: 2rem 0;'>
-        <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
-        <h2>Transcriptor Pro - Johnascriptor</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>Análisis avanzado de audio con IA</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
+    st.markdown("""<div style='text-align: center; padding: 2rem 0;'><h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1><h2>Transcriptor Pro - Johnascriptor</h2><p style='color: #666; margin-bottom: 2rem;'>Análisis avanzado de audio con IA</p></div>""", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.text_input("🔐 Contraseña", type="password", on_change=validate_password, key="password")
-    
     if st.session_state.get("password_attempted", False) and not st.session_state.password_correct:
         st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
     st.stop()
-
 
 # --- INICIO DE LA APP PRINCIPAL ---
 st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="🎙️", layout="wide")
@@ -56,40 +52,34 @@ if 'qa_history' not in st.session_state: st.session_state.qa_history = []
 if 'entity_search' not in st.session_state: st.session_state.entity_search = ""
 if 'entity_filter' not in st.session_state: st.session_state.entity_filter = "Todas"
 
-
 # --- FUNCIONES CALLBACK ---
 def set_audio_time(start_seconds): st.session_state.audio_start_time = int(start_seconds)
 def clear_search_callback(): st.session_state.search_input = ""
 def clear_entity_search_callback(): st.session_state.entity_search = ""
 
+# MEJORA 6: Validación de API Keys
 try:
     api_key = st.secrets["GROQ_API_KEY"]
+    if not api_key or len(api_key) < 20: raise ValueError("API Key inválida o no configurada.")
     client = Groq(api_key=api_key)
-except KeyError:
-    st.error("❌ Error: No se encontró GROQ_API_KEY en los secrets de Streamlit.")
+except (KeyError, ValueError) as e:
+    st.error(f"❌ Error: Configura una GROQ_API_KEY válida en los secrets de Streamlit. ({e})")
+    st.info("📖 Guía: Ve a 'Settings' → 'Secrets' en tu app de Streamlit y añade la clave GROQ_API_KEY.")
     st.stop()
 
-### CORRECCIÓN: Regla para 'más' más segura y explícita.
+# --- DICCIONARIO DE CORRECCIONES ---
 SPANISH_WORD_CORRECTIONS = {
-    r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1', r'\badministraci(?!ón\b)\b': 'administración', r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\binformaci(?!ón\b)\b': 'información', r'\borganizaci(?!ón\b)\b': 'organización', r'\bpolític(?!a\b)\b': 'política', r'\bRepúblic(?!a\b)\b': 'República', r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bBogot(?!á\b)\b': 'Bogotá', r'\bMéxic(?!o\b)\b': 'México', r'\bPer\b': 'Perú', r'\btambi(?!én\b)\b': 'también', r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué', r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde',
-    r'\bmas\b': 'más', r'\bMas\b': 'Más'
+    r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1', r'\badministraci(?!ón\b)\b': 'administración', r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\binformaci(?!ón\b)\b': 'información', r'\borganizaci(?!ón\b)\b': 'organización', r'\bpolític(?!a\b)\b': 'política', r'\bRepúblic(?!a\b)\b': 'República', r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bBogot(?!á\b)\b': 'Bogotá', r'\bMéxic(?!o\b)\b': 'México', r'\bPer\b': 'Perú', r'\btambi(?!én\b)\b': 'también', r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué', r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde', r'\b(M|m)as\b': r'\1ás',
 }
-
 
 # --- FUNCIONES AUXILIARES ---
 def create_copy_button(text_to_copy):
-    text_json = json.dumps(text_to_copy)
-    button_id = f"copy-button-{hash(text_to_copy)}"
-    button_html = f"""<button id="{button_id}" style="width: 100%; padding: 0.25rem 0.5rem; border-radius: 0.5rem; border: 1px solid rgba(49, 51, 63, 0.2); background-color: #FFFFFF; color: #31333F;">📋 Copiar Todo</button><script>document.getElementById("{button_id}").onclick = function() {{const textArea = document.createElement("textarea");textArea.value = {text_json};textArea.style.position = "fixed"; textArea.style.top = "-9999px"; textArea.style.left = "-9999px";document.body.appendChild(textArea);textArea.select();document.execCommand("copy");document.body.removeChild(textArea);const button = document.getElementById("{button_id}");const originalText = button.innerText;button.innerText = "✅ ¡Copiado!";setTimeout(function() {{ button.innerText = originalText; }}, 2000);}};
-</script>"""
-    components.html(button_html, height=40)
+    text_json, button_id = json.dumps(text_to_copy), f"copy-button-{hash(text_to_copy)}"
+    components.html(f"""<button id="{button_id}" style="width: 100%; padding: 0.25rem 0.5rem; border-radius: 0.5rem; border: 1px solid rgba(49, 51, 63, 0.2); background-color: #FFFFFF; color: #31333F;">📋 Copiar Todo</button><script>document.getElementById("{button_id}").onclick = function() {{const textArea = document.createElement("textarea");textArea.value = {text_json};textArea.style.position = "fixed"; document.body.appendChild(textArea);textArea.select();document.execCommand("copy");document.body.removeChild(textArea);const button = document.getElementById("{button_id}");const originalText = button.innerText;button.innerText = "✅ ¡Copiado!";setTimeout(function() {{ button.innerText = originalText; }}, 2000);}};
+</script>""", height=40)
 
-def format_timestamp(seconds):
-    return str(timedelta(seconds=int(seconds)))
-
-def format_transcription_with_timestamps(segments):
-    if not segments: return "No se encontraron segmentos."
-    return "\n".join([f"[{format_timestamp(s['start'])} --> {format_timestamp(s['end'])}] {s['text'].strip()}" for s in segments])
+def format_timestamp(seconds): return str(timedelta(seconds=int(seconds)))
+def format_transcription_with_timestamps(data): return "\n".join([f"[{format_timestamp(s['start'])} --> {format_timestamp(s['end'])}] {s['text'].strip()}" for s in data.segments]) if hasattr(data, 'segments') and data.segments else "No se encontraron segmentos."
 
 def fix_spanish_encoding(text):
     if not text: return ""
@@ -101,52 +91,52 @@ def fix_spanish_encoding(text):
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
+# MEJORA 1, 2: Función de conversión robusta y con manejo de recursos/tamaño
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
-    if not MOVIEPY_AVAILABLE:
-        return file_bytes, False, "MoviePy no disponible."
+    MAX_FILE_SIZE_MB = 100
+    if len(file_bytes) / (1024 * 1024) > MAX_FILE_SIZE_MB:
+        msg = f"⚠️ Archivo muy grande (>{MAX_FILE_SIZE_MB}MB). Se usará sin optimizar para evitar alto consumo de memoria."
+        logger.warning(msg)
+        return file_bytes, False, msg
+
+    if not MOVIEPY_AVAILABLE: return file_bytes, False, "MoviePy no disponible."
 
     st.info(f"Iniciando estandarización de '{filename}' para la IA...")
     original_size = len(file_bytes) / (1024 * 1024)
+    file_ext, input_path, output_path = os.path.splitext(filename)[1].lower(), tempfile.mktemp(suffix=file_ext), tempfile.mktemp(suffix=".mp3")
+    with open(input_path, 'wb') as tmp_input: tmp_input.write(file_bytes)
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_input:
-        tmp_input.write(file_bytes)
-        input_path = tmp_input.name
-    
-    output_path = tempfile.mktemp(suffix=".mp3")
-    
+    audio_clip, video_clip = None, None
     try:
-        audio_clip = None
         try:
             audio_clip = AudioFileClip(input_path)
-            st.info("Archivo procesado como audio.")
+            logger.info("Archivo procesado como audio.")
         except Exception:
-            st.warning("No se pudo abrir como audio, intentando como video...")
+            logger.warning("No se pudo abrir como audio, intentando como video...")
             video_clip = VideoFileClip(input_path)
             if video_clip.audio is None: raise ValueError("El archivo de video no contiene audio.")
             audio_clip = video_clip.audio
-            st.info("Audio extraído del video.")
+            logger.info("Audio extraído del video.")
         
-        mono_audio_clip = audio_monize(audio_clip)
-        mono_audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000)
+        # SOLUCIÓN: Usar ffmpeg_params para forzar mono (más robusto)
+        audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000, ffmpeg_params=["-ac", "1"])
         
-        mono_audio_clip.close()
-        audio_clip.close()
-
-        with open(output_path, 'rb') as f:
-            mp3_bytes = f.read()
-            
+        with open(output_path, 'rb') as f: mp3_bytes = f.read()
         final_size = len(mp3_bytes) / (1024 * 1024)
         msg = f"✅ Audio estandarizado a 16kHz/Mono: {original_size:.2f} MB → {final_size:.2f} MB"
+        logger.info(msg)
         return mp3_bytes, True, msg
         
     except Exception as e:
         msg = f"⚠️ Falló la estandarización de audio: **{str(e)}**. Se usará el archivo original."
+        logger.error(f"Error en convert_to_optimized_mp3: {e}")
         return file_bytes, False, msg
         
     finally:
+        if audio_clip: audio_clip.close()
+        if video_clip: video_clip.close()
         if os.path.exists(input_path): os.unlink(input_path)
         if os.path.exists(output_path): os.unlink(output_path)
-
 
 # --- FUNCIÓN ROBUSTA PARA LLAMADAS A LA IA ---
 def robust_llama_completion(client, messages, model, max_retries=3, **kwargs):
@@ -160,19 +150,16 @@ def robust_llama_completion(client, messages, model, max_retries=3, **kwargs):
                 st.warning(f"🤖 Modelo '{model}' sobrecargado. Reintentando en {wait_time}s...")
                 time.sleep(wait_time)
             else:
-                st.error(f"❌ Error de API persistente con '{model}': {str(e)}")
-                return None
+                st.error(f"❌ Error de API persistente con '{model}': {str(e)}"); logger.error(f"API Error con {model}: {e}"); return None
         except Exception as e:
-            st.error(f"❌ Error inesperado al llamar a la IA: {str(e)}")
-            return None
+            st.error(f"❌ Error inesperado al llamar a la IA: {str(e)}"); logger.error(f"Unexpected IA Error: {e}"); return None
     return None
 
 # --- FUNCIONES DE ANÁLISIS ---
 def post_process_with_llama(text, client, model):
     messages = [{"role": "system", "content": "Tu única tarea es corregir tildes y completar palabras comunes en transcripciones (ej. `informaci` -> `información`). No añadas, elimines ni reescribas nada. Devuelve solo el texto corregido."},
                 {"role": "user", "content": f"Corrige el siguiente texto:\n\n{text}"}]
-    corrected = robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=8192)
-    return corrected if corrected else text
+    return robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=8192) or text
 
 def generate_summary(text, client, model):
     messages = [{"role": "system", "content": "Eres un experto analista. Crea un resumen ejecutivo conciso (máximo 150 palabras) del texto proporcionado."},
@@ -186,172 +173,139 @@ def answer_question(question, text, client, history, model):
     return robust_llama_completion(client, messages, model=model, temperature=0.2, max_tokens=2048) or "No se pudo procesar la pregunta."
 
 def extract_all_entities(text, client, model):
-    messages = [
-        {"role": "system", "content": """
-Eres un sistema de extracción de entidades (NER) de alta precisión. Analiza el texto y extrae TODAS las entidades mencionadas, clasificándolas en las siguientes categorías: 'Persona', 'Organización', 'Lugar', 'Marca', 'Cargo'.
-REGLAS ESTRICTAS:
-1.  **CATEGORÍAS:**
-    -   **Persona:** Nombres de individuos (ej. "Juan Pérez").
-    -   **Organización:** Nombres de empresas, hospitales, universidades, etc. (ej. "Hospital General", "Google").
-    -   **Lugar:** Nombres de ciudades, países (ej. "Bogotá").
-    -   **Marca:** Nombres de productos comerciales (ej. "iPhone").
-    -   **Cargo:** Títulos profesionales (ej. "presidente", "doctor").
-2.  **FORMATO OBLIGATORIO:** Responde únicamente con un objeto JSON. La clave principal DEBE ser "entidades". Cada objeto en la lista DEBE usar las claves en inglés: "name", "category", y "context".
-3.  Si no encuentras entidades, devuelve: {"entidades": []}
-"""},
-        {"role": "user", "content": f"Extrae todas las entidades del siguiente texto:\n\n{text[:8000]}"}
-    ]
+    messages = [{"role": "system", "content": """Eres un sistema de extracción de entidades (NER) de alta precisión. Analiza el texto y extrae TODAS las entidades mencionadas, clasificándolas en: 'Persona', 'Organización', 'Lugar', 'Marca', 'Cargo'.
+REGLAS ESTRICTAS: Responde únicamente con un objeto JSON con la clave "entidades", donde cada objeto usa las claves en inglés: "name", "category", y "context". Si no hay entidades, devuelve {"entidades": []}.
+Ejemplo: {"entidades": [{"name": "Dr. Carlos Rivas", "category": "Persona", "context": "El Dr. Carlos Rivas mencionó los avances."}]}"""},
+                {"role": "user", "content": f"Extrae todas las entidades del siguiente texto:\n\n{text[:8000]}"}]
     response_json_str = robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=4096, response_format={"type": "json_object"})
     if not response_json_str: return []
     try:
-        data = json.loads(response_json_str)
-        validated_entities = []
+        data = json.loads(response_json_str); validated = []
         for entity in data.get('entidades', []):
-            name = entity.get('name') or entity.get('nombre')
-            category = entity.get('category') or entity.get('categoría')
-            context = entity.get('context') or entity.get('contexto')
-            if name and category:
-                validated_entities.append({'name': name, 'category': category, 'context': context})
-        return validated_entities
-    except (json.JSONDecodeError, TypeError):
-        return []
+            if entity.get('name') and entity.get('category'): validated.append(entity)
+        return validated
+    except (json.JSONDecodeError, TypeError): return []
 
 # --- FUNCIONES DE EXPORTACIÓN Y BÚSQUEDA ---
 def get_extended_context(segments, match_index, context_range=2):
     start_idx, end_idx = max(0, match_index - context_range), min(len(segments), match_index + context_range + 1)
-    return [{'text': s['text'].strip(), 'time': format_timestamp(s['start']), 'start': s['start'], 'is_match': (i == match_index)} for i, s in enumerate(segments) if start_idx <= i < end_idx]
+    return [{'text': s['text'].strip(), 'time': format_timestamp(s['start']), 'start': s['start'], 'is_match': i == match_index} for i, s in enumerate(segments) if start_idx <= i < end_idx]
 
 def export_to_srt(data):
-    srt_lines = []
+    lines = []
     for i, seg in enumerate(data.segments, 1):
-        start = timedelta(seconds=seg['start']); end = timedelta(seconds=seg['end'])
-        start_str = f"{start.seconds//3600:02}:{(start.seconds//60)%60:02}:{start.seconds%60:02},{start.microseconds//1000:03}"
-        end_str = f"{end.seconds//3600:02}:{(end.seconds//60)%60:02}:{end.seconds%60:02},{end.microseconds//1000:03}"
-        srt_lines.append(f"{i}\n{start_str} --> {end_str}\n{seg['text'].strip()}\n")
-    return "\n".join(srt_lines)
+        start, end = timedelta(seconds=seg['start']), timedelta(seconds=seg['end'])
+        start_str, end_str = f"{start.seconds//3600:02}:{(start.seconds//60)%60:02}:{start.seconds%60:02},{start.microseconds//1000:03}", f"{end.seconds//3600:02}:{(end.seconds//60)%60:02}:{end.seconds%60:02},{end.microseconds//1000:03}"
+        lines.append(f"{i}\n{start_str} --> {end_str}\n{seg['text'].strip()}\n")
+    return "\n".join(lines)
 
-def find_entity_in_segments(entity_name, segments):
-    matches = []
-    pattern = re.compile(r'\b' + re.escape(entity_name) + r'\b', re.IGNORECASE)
+# MEJORA 7: Optimización de búsqueda con caché
+@st.cache_data
+def find_entity_in_segments_cached(entity_name, segments_json):
+    segments = json.loads(segments_json)
+    matches, pattern = [], re.compile(r'\b' + re.escape(entity_name) + r'\b', re.IGNORECASE)
     for i, seg in enumerate(segments):
         if pattern.search(seg['text']): matches.append(i)
     return matches
+
+# MEJORA 4: Función para cache
+def get_file_hash(file_bytes): return hashlib.md5(file_bytes).hexdigest()
 
 # --- INTERFAZ DE LA APP ---
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
-    st.header("⚙️ Configuración")
-    model_option = st.selectbox("Modelo de Transcripción", ["whisper-large-v3"])
-    language = st.selectbox("Idioma del Audio", ["es"])
-    
-    st.markdown("---")
-    st.subheader("🤖 Análisis con IA")
-    llama_model_option = st.selectbox("Modelo de Llama para Análisis", ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"], help="Elige 'instant' para velocidad o 'versatile' para máxima calidad.")
-    
-    enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True)
-    enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True)
-    enable_entities = st.checkbox("📊 Extraer Entidades", value=True)
-    
-    st.markdown("---")
-    st.subheader("🔍 Búsqueda Contextual")
-    context_lines = st.slider("Líneas de contexto", 1, 5, 2)
-    
-    st.markdown("---")
-    if MOVIEPY_AVAILABLE:
-        st.success("✅ **Estandarización de Audio Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
-    else:
-        st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará.")
-        st.warning("Añade `moviepy` y `imageio-ffmpeg` a tu archivo `requirements.txt`.")
+    st.header("⚙️ Configuración"); model_option = st.selectbox("Modelo de Transcripción", ["whisper-large-v3"]); language = st.selectbox("Idioma del Audio", ["es"]); st.markdown("---"); st.subheader("🤖 Análisis con IA")
+    llama_model_option = st.selectbox("Modelo de Llama para Análisis", ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"], help="Elige 'instant' para velocidad o 'versatile' para máxima calidad.")
+    enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True); enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True); enable_entities = st.checkbox("📊 Extraer Entidades", value=True)
+    st.markdown("---"); st.subheader("🔍 Búsqueda Contextual"); context_lines = st.slider("Líneas de contexto", 1, 5, 2); st.markdown("---")
+    if MOVIEPY_AVAILABLE: st.success("✅ **Estandarización de Audio Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
+    else: st.warning("⚠️ **Optimización Desactivada:** `moviepy` no está instalado.")
 
 st.subheader("📤 Sube tu archivo de audio o video")
 uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "avi", "mov"], label_visibility="collapsed")
 
 if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
     for key in list(st.session_state.keys()):
-        if key not in ['password_correct', 'password_attempted']: del st.session_state[key]
+        if key not in ['password_correct', 'password_attempted'] and not key.startswith("transcription_"): del st.session_state[key]
     st.session_state.qa_history = []
     
+    file_bytes = uploaded_file.getvalue()
+    file_hash = get_file_hash(file_bytes)
+    
+    # MEJORA 4: Lógica de caché
+    if file_hash in st.session_state:
+        st.success("✅ ¡Transcripción encontrada en caché! Cargando resultados...")
+        st.session_state.update(st.session_state[file_hash])
+        time.sleep(1)
+        st.rerun()
+    
+    # MEJORA 5: Barra de Progreso
+    progress_bar = st.progress(0, text="Iniciando proceso...")
+    
     try:
-        file_bytes = uploaded_file.getvalue()
-        
-        with st.spinner("🔄 Estandarizando audio para máxima precisión..."):
-            processed_bytes, was_converted, conv_message = convert_to_optimized_mp3(file_bytes, uploaded_file.name)
-            st.info(conv_message)
+        progress_bar.progress(10, text="🔄 Estandarizando audio para máxima precisión...")
+        processed_bytes, was_converted, conv_message = convert_to_optimized_mp3(file_bytes, uploaded_file.name)
+        st.info(conv_message)
         st.session_state.uploaded_audio_bytes = processed_bytes
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
-            tmp.write(processed_bytes)
-            tmp_path = tmp.name
-        
-        with st.spinner("🔄 Transcribiendo con IA (máxima precisión)..."):
-            with open(tmp_path, "rb") as audio_file:
-                transcription_result = client.audio.transcriptions.create(
-                    file=(uploaded_file.name, audio_file.read()), 
-                    model=model_option, language=language,
-                    response_format="verbose_json", temperature=0.1
-                )
-        os.unlink(tmp_path)
-        
-        ### MEJORA: Crear una "única fuente de verdad" para los datos limpios.
-        # 1. Limpiar cada segmento individualmente para asegurar consistencia.
-        cleaned_segments = []
-        for seg in transcription_result.segments:
-            cleaned_text = fix_spanish_encoding(seg['text'])
-            cleaned_segments.append({
-                'start': seg['start'],
-                'end': seg['end'],
-                'text': cleaned_text
-            })
+            tmp.write(processed_bytes); tmp_path = tmp.name
 
-        # 2. Reconstruir el texto completo a partir de los segmentos ya limpios.
-        full_cleaned_text = " ".join([seg['text'].strip() for seg in cleaned_segments])
+        # MEJORA 3: Manejo de errores en transcripción
+        file_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
+        if file_size_mb > 25:
+            st.error(f"❌ Archivo procesado muy grande ({file_size_mb:.1f}MB). La API de Groq acepta un máximo de 25MB.")
+            os.unlink(tmp_path); st.stop()
         
-        # 3. (Opcional) Aplicar post-procesamiento de Llama al texto completo ya limpio.
+        progress_bar.progress(30, text="🎙️ Transcribiendo con IA (puede tardar varios minutos)...")
+        with open(tmp_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(file=(uploaded_file.name, audio_file.read()), model=model_option, language=language, response_format="verbose_json", temperature=0.1)
+        os.unlink(tmp_path)
+        logger.info("Transcripción completada con éxito.")
+
+        text = fix_spanish_encoding(transcription.text)
         if enable_llama_postprocess:
-            with st.spinner("🤖 Mejorando transcripción con IA..."):
-                full_cleaned_text = post_process_with_llama(full_cleaned_text, client, llama_model_option)
+            progress_bar.progress(60, text="🤖 Mejorando transcripción con IA...")
+            text = post_process_with_llama(text, client, llama_model_option)
         
-        # 4. Guardar los datos limpios en el estado de la sesión.
-        st.session_state.transcription = full_cleaned_text
-        st.session_state.segments = cleaned_segments
+        for seg in transcription.segments: seg['text'] = fix_spanish_encoding(seg['text'])
         
-        with st.spinner("🧠 Generando análisis avanzado..."):
-            if enable_summary: st.session_state.summary = generate_summary(full_cleaned_text, client, llama_model_option)
-            if enable_entities: st.session_state.entities = extract_all_entities(full_cleaned_text, client, llama_model_option)
+        session_data = {'transcription': text, 'transcription_data': transcription, 'uploaded_audio_bytes': processed_bytes}
         
-        st.success("✅ ¡Proceso completado!")
+        progress_bar.progress(80, text="🧠 Generando análisis avanzado...")
+        if enable_summary: session_data['summary'] = generate_summary(text, client, llama_model_option)
+        if enable_entities: session_data['entities'] = extract_all_entities(text, client, llama_model_option)
+        
+        st.session_state.update(session_data)
+        st.session_state[file_hash] = session_data # Guardar en caché
+        
+        progress_bar.progress(100, text="✅ ¡Proceso completado!")
+        time.sleep(1); progress_bar.empty(); st.success("✅ ¡Proceso completado!")
         st.balloons()
         st.rerun()
+
     except Exception as e:
+        logger.error(f"Error crítico en el proceso de transcripción: {e}", exc_info=True)
         st.error(f"❌ Error crítico: {e}")
+        if 'progress_bar' in locals(): progress_bar.empty()
 
 # --- SECCIÓN DE RESULTADOS ---
 if 'transcription' in st.session_state:
-    st.markdown("---")
-    st.subheader("🎧 Reproduce y Analiza")
-    st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
+    st.markdown("---"); st.subheader("🎧 Reproduce y Analiza"); st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo"]
-    if 'entities' in st.session_state and st.session_state.get('entities'):
-        tab_titles.append("📊 Entidades Clave")
+    if 'entities' in st.session_state and st.session_state.get('entities'): tab_titles.append("📊 Entidades Clave")
     tabs = st.tabs(tab_titles)
     
-    # Pestaña 1: Transcripción
-    with tabs[0]:
-        HIGHLIGHT_STYLE = "background-color: #FFD700; color: black; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
-        MATCH_STYLE = "background-color: #1a1a2e; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311;"
-        CONTEXT_STYLE = "background-color: #1f1f1f; padding: 0.6rem; border-radius: 4px;"
-        BOX_STYLE = "background-color: #000000; color: #FFFFFF; border: 1px solid #444; border-radius: 10px; padding: 1.5rem; height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; line-height: 1.75; font-size: 1rem;"
-        
-        c1, c2 = st.columns([4, 1])
-        search_query = c1.text_input("🔎 Buscar en la transcripción:", key="search_input")
+    with tabs[0]: # Transcripción
+        HIGHLIGHT_STYLE, MATCH_STYLE, CONTEXT_STYLE, BOX_STYLE = "background-color: #FFD700; color: black; padding: 2px 5px; border-radius: 4px; font-weight: bold;", "background-color: #1a1a2e; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311;", "background-color: #1f1f1f; padding: 0.6rem; border-radius: 4px;", "background-color: #000000; color: #FFFFFF; border: 1px solid #444; border-radius: 10px; padding: 1.5rem; height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; line-height: 1.75; font-size: 1rem;"
+        c1, c2 = st.columns([4, 1]); search_query = c1.text_input("🔎 Buscar en la transcripción:", key="search_input");
         if search_query: c2.button("🗑️ Limpiar", on_click=clear_search_callback, use_container_width=True)
-
+        
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
-                ### MEJORA: La búsqueda ahora usa los segmentos limpios.
-                segments, pattern = st.session_state.segments, re.compile(re.escape(search_query), re.IGNORECASE)
+                segments, pattern = st.session_state.transcription_data.segments, re.compile(re.escape(search_query), re.IGNORECASE)
                 matches = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
                 if matches:
                     st.success(f"✅ {len(matches)} coincidencia(s) encontrada(s).")
@@ -366,64 +320,40 @@ if 'transcription' in st.session_state:
         
         html = re.sub(f"({re.escape(search_query)})", f'<span style="{HIGHLIGHT_STYLE}">\g<1></span>', st.session_state.transcription, flags=re.IGNORECASE) if search_query else st.session_state.transcription
         st.markdown(f'<div style="{BOX_STYLE}">{html.replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
-        
-        c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
-        c1.download_button("💾 TXT", st.session_state.transcription, "transcripcion.txt", use_container_width=True)
-        c2.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.segments), "transcripcion_tiempos.txt", use_container_width=True)
-        c3.download_button("💾 SRT", export_to_srt(st.session_state), "subtitulos.srt", use_container_width=True)
+        c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5]); c1.download_button("💾 TXT", st.session_state.transcription, "transcripcion.txt", use_container_width=True); c2.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data), "transcripcion_tiempos.txt", use_container_width=True); c3.download_button("💾 SRT", export_to_srt(st.session_state.transcription_data), "subtitulos.srt", use_container_width=True);
         with c4: create_copy_button(st.session_state.transcription)
 
-    # Pestaña 2: Resumen
-    with tabs[1]:
+    with tabs[1]: # Resumen
         if 'summary' in st.session_state:
-            st.markdown("### 📝 Resumen Ejecutivo")
-            st.markdown(st.session_state.summary)
-            st.markdown("---")
-            st.markdown("### 💭 Pregunta sobre el contenido")
-            
+            st.markdown("### 📝 Resumen Ejecutivo"); st.markdown(st.session_state.summary); st.markdown("---"); st.markdown("### 💭 Pregunta sobre el contenido")
             for qa in st.session_state.qa_history:
-                with st.chat_message("user"): st.markdown(qa['question'])
+                with st.chat_message("user"): st.markdown(qa['question']);
                 with st.chat_message("assistant"): st.markdown(qa['answer'])
-
             if user_q := st.chat_input("Escribe tu pregunta aquí..."):
                 with st.spinner("🤔 Analizando..."):
                     ans = answer_question(user_q, st.session_state.transcription, client, st.session_state.qa_history, llama_model_option)
-                    st.session_state.qa_history.append({'question': user_q, 'answer': ans})
-                    st.rerun()
+                    st.session_state.qa_history.append({'question': user_q, 'answer': ans}); st.rerun()
         else: st.info("El resumen no fue generado.")
 
-    # Pestaña 3: Entidades
-    if 'entities' in st.session_state and st.session_state.get('entities'):
+    if 'entities' in st.session_state and st.session_state.get('entities'): # Entidades
         with tabs[2]:
-            st.markdown("### 📊 Entidades Clave Identificadas")
-            entities = st.session_state.entities
-            
+            st.markdown("### 📊 Entidades Clave Identificadas"); entities = st.session_state.entities
             categories = ["Todas"] + sorted(list(set(e.get('category', 'N/A') for e in entities)))
-            
-            c1, c2, c3 = st.columns([2, 2, 1])
-            selected_category = c1.selectbox("Filtrar por categoría:", options=categories, key="entity_filter")
-            entity_search_query = c2.text_input("Buscar entidad por nombre:", key="entity_search")
+            c1, c2, c3 = st.columns([2, 2, 1]); selected_category = c1.selectbox("Filtrar por categoría:", options=categories, key="entity_filter"); entity_search_query = c2.text_input("Buscar entidad por nombre:", key="entity_search");
             if entity_search_query: c3.button("🗑️", on_click=clear_entity_search_callback, key="clear_entity_btn")
-
-            filtered_entities = entities
-            if selected_category != "Todas":
-                filtered_entities = [e for e in filtered_entities if e.get('category') == selected_category]
-            if entity_search_query:
-                pattern = re.compile(re.escape(entity_search_query), re.IGNORECASE)
-                filtered_entities = [e for e in filtered_entities if pattern.search(e.get('name', ''))]
-
-            if not filtered_entities:
-                st.info("No se encontraron entidades con los filtros seleccionados.")
+            filtered_entities = [e for e in entities if (selected_category == "Todas" or e.get('category') == selected_category) and (not entity_search_query or re.search(re.escape(entity_search_query), e.get('name', ''), re.IGNORECASE))]
+            
+            if not filtered_entities: st.info("No se encontraron entidades con los filtros seleccionados.")
             else:
                 st.success(f"Mostrando {len(filtered_entities)} de {len(entities)} entidades totales.")
+                segments = st.session_state.transcription_data.segments
+                segments_json = json.dumps([{'text': s['text'], 'start': s['start']} for s in segments])
                 for entity in filtered_entities:
                     entity_name, entity_cat = entity.get('name'), entity.get('category')
                     st.markdown(f"**{entity_name}** | **Categoría:** `{entity_cat}`")
-                    
                     with st.expander("Ver contexto y menciones en audio"):
                         st.markdown(f"> {entity.get('context', 'Sin contexto.')}")
-                        segments = st.session_state.segments
-                        matches = find_entity_in_segments(entity_name, segments)
+                        matches = find_entity_in_segments_cached(entity_name, segments_json) # Uso de función cacheada
                         if matches:
                             st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s):**")
                             for match_idx in matches:
@@ -433,8 +363,7 @@ if 'transcription' in st.session_state:
                                     ct.button(f"▶️ {ctx['time']}", key=f"entity_play_{entity_name}_{match_idx}_{ctx['start']}", on_click=set_audio_time, args=(ctx['start'],), use_container_width=True)
                                     text_html = re.sub(f'({re.escape(entity_name)})', f'<span style="{HIGHLIGHT_STYLE}">\g<1></span>', ctx['text'], flags=re.IGNORECASE) if ctx['is_match'] else ctx['text']
                                     cc.markdown(f"<div style='color: white; {MATCH_STYLE if ctx['is_match'] else CONTEXT_STYLE}'>{text_html}</div>", unsafe_allow_html=True)
-                        else:
-                            st.info("No se encontraron menciones exactas en los segmentos de la transcripción.")
+                        else: st.info("No se encontraron menciones exactas en los segmentos de la transcripción.")
 
 # --- Pie de página y Limpieza ---
 st.markdown("---")
@@ -444,9 +373,4 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
     st.session_state.password_correct = pwd_ok
     st.rerun()
 
-st.markdown("""
-<div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.6.0 (Stable)</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | ⚙️ Consistencia de Datos y Correcciones de Bugs</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666; margin-top: 2rem;'><p><strong>Transcriptor Pro - Johnascriptor - v4.5 (Mejorado)</strong></p><p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 | 🚀 Caché y Progreso | 🔒 Robustez Mejorada</p></div>""", unsafe_allow_html=True)
