@@ -14,13 +14,12 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# MEJORA: Reemplazo de moviepy con pydub
+# MEJORA 1: Se eliminan los mensajes de error para una experiencia más limpia
 try:
     from pydub import AudioSegment
     AUDIO_CONVERSION_AVAILABLE = True
 except ImportError:
-    st.error("Librería `pydub` no encontrada. La conversión de audio no funcionará. Instala con: pip install pydub")
-    st.warning("Además, asegúrate de tener FFmpeg instalado en tu sistema.")
+    # La conversión se deshabilita silenciosamente si pydub no está instalado
     AUDIO_CONVERSION_AVAILABLE = False
 
 
@@ -87,25 +86,19 @@ def format_transcription_with_timestamps(data): return "\n".join([f"[{format_tim
 
 def fix_spanish_encoding(text):
     if not text: return ""
-    result = text
-    for wrong, correct in {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã\'': 'Ñ', 'Â\u00bf': '¿', 'Â\u00a1': '¡'}.items():
-        result = result.replace(wrong, correct)
-    for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
-        result = re.sub(pattern, replacement, result)
+    result = text;
+    for wrong, correct in {'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ', 'Ã\'': 'Ñ', 'Â\u00bf': '¿', 'Â\u00a1': '¡'}.items(): result = result.replace(wrong, correct)
+    for pattern, replacement in SPANISH_WORD_CORRECTIONS.items(): result = re.sub(pattern, replacement, result)
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
-# MEJORA: Función de conversión de audio con pydub
+# MEJORA 3: Se quita el límite de tamaño para intentar la conversión siempre
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
     if not AUDIO_CONVERSION_AVAILABLE:
         return file_bytes, False, "⚠️ Conversión no disponible. Usando archivo original."
 
     st.info(f"🔄 Iniciando estandarización de '{filename}' para la IA...")
     original_size = len(file_bytes) / (1024 * 1024)
-    
-    MAX_SIZE_MB = 100
-    if original_size > MAX_SIZE_MB:
-        return file_bytes, False, f"⚠️ Archivo muy grande ({original_size:.1f}MB). Se usará sin optimizar."
     
     file_ext = os.path.splitext(filename)[1].lower()
     
@@ -143,8 +136,7 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
         if os.path.exists(input_path): os.unlink(input_path)
         if os.path.exists(output_path): os.unlink(output_path)
 
-
-# --- FUNCIONES DE ANÁLISIS Y LLAMADAS A LA IA (Sin cambios) ---
+# --- FUNCIONES DE ANÁLISIS Y LLAMADAS A LA IA ---
 def robust_llama_completion(client, messages, model, max_retries=3, **kwargs):
     for attempt in range(max_retries):
         try:
@@ -164,8 +156,9 @@ def post_process_with_llama(text, client, model):
                 {"role": "user", "content": f"Corrige el siguiente texto:\n\n{text}"}]
     return robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=8192) or text
 
+# MEJORA 2: Prompt ajustado para un resumen directo
 def generate_summary(text, client, model):
-    messages = [{"role": "system", "content": "Eres un experto analista. Crea un resumen ejecutivo conciso (máximo 150 palabras) del texto proporcionado."},
+    messages = [{"role": "system", "content": "Eres un experto analista. Crea un resumen ejecutivo conciso (máximo 150 palabras) del texto proporcionado. IMPORTANTE: Responde únicamente con el texto del resumen, sin añadir frases introductorias."},
                 {"role": "user", "content": f"Resume el siguiente texto:\n\n{text}"}]
     return robust_llama_completion(client, messages, model=model, temperature=0.3, max_tokens=1024) or "No se pudo generar el resumen."
 
@@ -220,13 +213,12 @@ with st.sidebar:
     enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True); enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True); enable_entities = st.checkbox("📊 Extraer Entidades", value=True)
     st.markdown("---"); st.subheader("🔍 Búsqueda Contextual"); context_lines = st.slider("Líneas de contexto", 1, 5, 2); st.markdown("---")
     if AUDIO_CONVERSION_AVAILABLE: st.success("✅ **Estandarización con Pydub Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
-    else: st.warning("⚠️ **Optimización Desactivada:** `pydub` o `ffmpeg` no están instalados.")
+    else: st.warning("⚠️ **Optimización Desactivada:** `pydub` no está disponible.")
 
 st.subheader("📤 Sube tu archivo de audio o video")
 uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "avi", "mov", "ogg", "flac"], label_visibility="collapsed")
 
 if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
-    # Lógica principal de procesamiento (sin cambios)
     for key in list(st.session_state.keys()):
         if key not in ['password_correct', 'password_attempted'] and not key.startswith("transcription_"): del st.session_state[key]
     st.session_state.qa_history = []
@@ -285,11 +277,10 @@ if 'transcription' in st.session_state:
     if 'entities' in st.session_state and st.session_state.get('entities'): tab_titles.append("📊 Entidades Clave")
     tabs = st.tabs(tab_titles)
     
-    with tabs[0]: # Transcripción
+    with tabs[0]:
         HIGHLIGHT_STYLE, MATCH_STYLE, CONTEXT_STYLE, BOX_STYLE = "background-color: #FFD700; color: black; padding: 2px 5px; border-radius: 4px; font-weight: bold;", "background-color: #1a1a2e; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311;", "background-color: #1f1f1f; padding: 0.6rem; border-radius: 4px;", "background-color: #000000; color: #FFFFFF; border: 1px solid #444; border-radius: 10px; padding: 1.5rem; height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; line-height: 1.75; font-size: 1rem;"
         c1, c2 = st.columns([4, 1]); search_query = c1.text_input("🔎 Buscar en la transcripción:", key="search_input");
         if search_query: c2.button("🗑️ Limpiar", on_click=clear_search_callback, use_container_width=True)
-        
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
                 segments, pattern = st.session_state.transcription_data.segments, re.compile(re.escape(search_query), re.IGNORECASE)
@@ -304,13 +295,11 @@ if 'transcription' in st.session_state:
                             cc.markdown(f"<div style='color: white; {MATCH_STYLE if ctx['is_match'] else CONTEXT_STYLE}'>{text_html}</div>", unsafe_allow_html=True)
                         st.markdown("---")
                 else: st.info("❌ No se encontraron coincidencias.")
-        
         html = re.sub(f"({re.escape(search_query)})", f'<span style="{HIGHLIGHT_STYLE}">\g<1></span>', st.session_state.transcription, flags=re.IGNORECASE) if search_query else st.session_state.transcription
         st.markdown(f'<div style="{BOX_STYLE}">{html.replace(chr(10), "<br>")}</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5]); c1.download_button("💾 TXT", st.session_state.transcription, "transcripcion.txt", use_container_width=True); c2.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data), "transcripcion_tiempos.txt", use_container_width=True); c3.download_button("💾 SRT", export_to_srt(st.session_state.transcription_data), "subtitulos.srt", use_container_width=True);
         with c4: create_copy_button(st.session_state.transcription)
-
-    with tabs[1]: # Resumen
+    with tabs[1]:
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo"); st.markdown(st.session_state.summary); st.markdown("---"); st.markdown("### 💭 Pregunta sobre el contenido")
             for qa in st.session_state.qa_history:
@@ -321,15 +310,12 @@ if 'transcription' in st.session_state:
                     ans = answer_question(user_q, st.session_state.transcription, client, st.session_state.qa_history, llama_model_option)
                     st.session_state.qa_history.append({'question': user_q, 'answer': ans}); st.rerun()
         else: st.info("El resumen no fue generado.")
-
-    if 'entities' in st.session_state and st.session_state.get('entities'): # Entidades
+    if 'entities' in st.session_state and st.session_state.get('entities'):
         with tabs[2]:
-            st.markdown("### 📊 Entidades Clave Identificadas"); entities = st.session_state.entities
-            categories = ["Todas"] + sorted(list(set(e.get('category', 'N/A') for e in entities)))
+            st.markdown("### 📊 Entidades Clave Identificadas"); entities = st.session_state.entities; categories = ["Todas"] + sorted(list(set(e.get('category', 'N/A') for e in entities)))
             c1, c2, c3 = st.columns([2, 2, 1]); selected_category = c1.selectbox("Filtrar por categoría:", options=categories, key="entity_filter"); entity_search_query = c2.text_input("Buscar entidad por nombre:", key="entity_search");
             if entity_search_query: c3.button("🗑️", on_click=clear_entity_search_callback, key="clear_entity_btn")
             filtered_entities = [e for e in entities if (selected_category == "Todas" or e.get('category') == selected_category) and (not entity_search_query or re.search(re.escape(entity_search_query), e.get('name', ''), re.IGNORECASE))]
-            
             if not filtered_entities: st.info("No se encontraron entidades con los filtros seleccionados.")
             else:
                 st.success(f"Mostrando {len(filtered_entities)} de {len(entities)} entidades totales.")
@@ -355,8 +341,6 @@ if 'transcription' in st.session_state:
 st.markdown("---")
 if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
     pwd_ok = st.session_state.get('password_correct', False)
-    st.session_state.clear()
-    st.session_state.password_correct = pwd_ok
-    st.rerun()
+    st.session_state.clear(); st.session_state.password_correct = pwd_ok; st.rerun()
 
-st.markdown("""<div style='text-align: center; color: #666; margin-top: 2rem;'><p><strong>Transcriptor Pro - Johnascriptor - v5.0 (Pydub Engine)</strong></p><p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 | 🎵 Conversión con Pydub | 🚀 Caché y Progreso</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666; margin-top: 2rem;'><p><strong>Transcriptor Pro - Johnascriptor - v5.1 (Refined)</strong></p><p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 | 🎵 Pydub Engine | 🚀 Caché y Progreso</p></div>""", unsafe_allow_html=True)
