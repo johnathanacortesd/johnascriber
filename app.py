@@ -8,13 +8,13 @@ import time
 import streamlit.components.v1 as components
 from datetime import timedelta
 
+# --- CORRECCIÓN: Se mueve el mensaje de error para después del set_page_config ---
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
-    ### CORRECCIÓN: Importar la función correcta para convertir a mono.
     from moviepy.audio.fx.all import audio_monize
     MOVIEPY_AVAILABLE = True
 except ImportError:
-    st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará. Instala con: pip install moviepy")
+    # Ahora solo establece una bandera. El error se mostrará de forma segura más adelante.
     MOVIEPY_AVAILABLE = False
 
 # --- LÓGICA DE AUTENTICACIÓN (Sin cambios) ---
@@ -128,10 +128,8 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
             audio_clip = video_clip.audio
             st.info("Audio extraído del video.")
         
-        ### CORRECCIÓN: Usar la función `audio_monize` para convertir a mono.
         mono_audio_clip = audio_monize(audio_clip)
 
-        # Escribir el clip mono procesado
         mono_audio_clip.write_audiofile(
             output_path, 
             codec='libmp3lame', 
@@ -274,10 +272,12 @@ with st.sidebar:
     context_lines = st.slider("Líneas de contexto", 1, 5, 2)
     
     st.markdown("---")
+    # --- CORRECCIÓN: Mostrar el error aquí, de forma segura ---
     if MOVIEPY_AVAILABLE:
         st.success("✅ **Estandarización de Audio Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
     else:
-        st.warning("⚠️ **Optimización Desactivada:** `moviepy` no está instalado.")
+        st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará.")
+        st.warning("Añade `moviepy` y `imageio-ffmpeg` a tu archivo `requirements.txt`.")
 
 st.subheader("📤 Sube tu archivo de audio o video")
 uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "avi", "mov"], label_visibility="collapsed")
@@ -448,7 +448,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 
 st.markdown("""
 <div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.4.2 (Bugfix)</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión a Mono Definitiva | 📊 NER Robusto</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.5.0 (Final Stable)</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión a Mono Estable | 📊 NER Robusto</p>
 </div>
 """, unsafe_allow_html=True)
