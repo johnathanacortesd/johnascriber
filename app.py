@@ -10,6 +10,8 @@ from datetime import timedelta
 
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
+    ### CORRECCIÓN: Importar la función correcta para convertir a mono.
+    from moviepy.audio.fx.all import audio_monize
     MOVIEPY_AVAILABLE = True
 except ImportError:
     st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará. Instala con: pip install moviepy")
@@ -100,7 +102,6 @@ def fix_spanish_encoding(text):
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
-### MEJORA: Lógica de conversión de audio corregida para usar el método correcto `.set_channels(1)`.
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
     if not MOVIEPY_AVAILABLE:
         return file_bytes, False, "MoviePy no disponible."
@@ -127,11 +128,10 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
             audio_clip = video_clip.audio
             st.info("Audio extraído del video.")
         
-        # --- INICIO DE LA CORRECCIÓN ---
-        # 1. Crear una versión mono del clip
-        mono_audio_clip = audio_clip.set_channels(1)
+        ### CORRECCIÓN: Usar la función `audio_monize` para convertir a mono.
+        mono_audio_clip = audio_monize(audio_clip)
 
-        # 2. Escribir el nuevo clip mono sin el argumento 'nchannels'
+        # Escribir el clip mono procesado
         mono_audio_clip.write_audiofile(
             output_path, 
             codec='libmp3lame', 
@@ -139,10 +139,8 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
             fps=16000
         )
         
-        # 3. Cerrar ambos clips para liberar recursos
         mono_audio_clip.close()
         audio_clip.close()
-        # --- FIN DE LA CORRECCIÓN ---
 
         with open(output_path, 'rb') as f:
             mp3_bytes = f.read()
@@ -450,7 +448,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 
 st.markdown("""
 <div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.4.1 (Bugfix)</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión a Mono Corregida | 📊 NER Robusto</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.4.2 (Bugfix)</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión a Mono Definitiva | 📊 NER Robusto</p>
 </div>
 """, unsafe_allow_html=True)
