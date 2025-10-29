@@ -8,13 +8,11 @@ import time
 import streamlit.components.v1 as components
 from datetime import timedelta
 
-# --- CORRECCIÓN: Se mueve el mensaje de error para después del set_page_config ---
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
     from moviepy.audio.fx.all import audio_monize
     MOVIEPY_AVAILABLE = True
 except ImportError:
-    # Ahora solo establece una bandera. El error se mostrará de forma segura más adelante.
     MOVIEPY_AVAILABLE = False
 
 # --- LÓGICA DE AUTENTICACIÓN (Sin cambios) ---
@@ -71,9 +69,10 @@ except KeyError:
     st.error("❌ Error: No se encontró GROQ_API_KEY en los secrets de Streamlit.")
     st.stop()
 
-# --- DICCIONARIO DE CORRECCIONES (Sin cambios) ---
+### CORRECCIÓN: Regla para 'más' más segura y explícita.
 SPANISH_WORD_CORRECTIONS = {
-    r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1', r'\badministraci(?!ón\b)\b': 'administración', r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\binformaci(?!ón\b)\b': 'información', r'\borganizaci(?!ón\b)\b': 'organización', r'\bpolític(?!a\b)\b': 'política', r'\bRepúblic(?!a\b)\b': 'República', r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bBogot(?!á\b)\b': 'Bogotá', r'\bMéxic(?!o\b)\b': 'México', r'\bPer\b': 'Perú', r'\btambi(?!én\b)\b': 'también', r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué', r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde', r'\b(M|m)as\b': r'\1ás',
+    r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1', r'\badministraci(?!ón\b)\b': 'administración', r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\binformaci(?!ón\b)\b': 'información', r'\borganizaci(?!ón\b)\b': 'organización', r'\bpolític(?!a\b)\b': 'política', r'\bRepúblic(?!a\b)\b': 'República', r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bBogot(?!á\b)\b': 'Bogotá', r'\bMéxic(?!o\b)\b': 'México', r'\bPer\b': 'Perú', r'\btambi(?!én\b)\b': 'también', r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué', r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde',
+    r'\bmas\b': 'más', r'\bMas\b': 'Más'
 }
 
 
@@ -88,9 +87,9 @@ def create_copy_button(text_to_copy):
 def format_timestamp(seconds):
     return str(timedelta(seconds=int(seconds)))
 
-def format_transcription_with_timestamps(data):
-    if not hasattr(data, 'segments') or not data.segments: return "No se encontraron segmentos."
-    return "\n".join([f"[{format_timestamp(s['start'])} --> {format_timestamp(s['end'])}] {s['text'].strip()}" for s in data.segments])
+def format_transcription_with_timestamps(segments):
+    if not segments: return "No se encontraron segmentos."
+    return "\n".join([f"[{format_timestamp(s['start'])} --> {format_timestamp(s['end'])}] {s['text'].strip()}" for s in segments])
 
 def fix_spanish_encoding(text):
     if not text: return ""
@@ -108,9 +107,8 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
 
     st.info(f"Iniciando estandarización de '{filename}' para la IA...")
     original_size = len(file_bytes) / (1024 * 1024)
-    file_ext = os.path.splitext(filename)[1].lower()
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_input:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(filename)[1]) as tmp_input:
         tmp_input.write(file_bytes)
         input_path = tmp_input.name
     
@@ -129,13 +127,7 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
             st.info("Audio extraído del video.")
         
         mono_audio_clip = audio_monize(audio_clip)
-
-        mono_audio_clip.write_audiofile(
-            output_path, 
-            codec='libmp3lame', 
-            bitrate=target_bitrate, 
-            fps=16000
-        )
+        mono_audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000)
         
         mono_audio_clip.close()
         audio_clip.close()
@@ -205,12 +197,6 @@ REGLAS ESTRICTAS:
     -   **Marca:** Nombres de productos comerciales (ej. "iPhone").
     -   **Cargo:** Títulos profesionales (ej. "presidente", "doctor").
 2.  **FORMATO OBLIGATORIO:** Responde únicamente con un objeto JSON. La clave principal DEBE ser "entidades". Cada objeto en la lista DEBE usar las claves en inglés: "name", "category", y "context".
-    Ejemplo de formato:
-    {
-      "entidades": [
-        { "name": "Dr. Carlos Rivas", "category": "Persona", "context": "El Dr. Carlos Rivas mencionó los avances." }
-      ]
-    }
 3.  Si no encuentras entidades, devuelve: {"entidades": []}
 """},
         {"role": "user", "content": f"Extrae todas las entidades del siguiente texto:\n\n{text[:8000]}"}
@@ -272,7 +258,6 @@ with st.sidebar:
     context_lines = st.slider("Líneas de contexto", 1, 5, 2)
     
     st.markdown("---")
-    # --- CORRECCIÓN: Mostrar el error aquí, de forma segura ---
     if MOVIEPY_AVAILABLE:
         st.success("✅ **Estandarización de Audio Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
     else:
@@ -301,27 +286,39 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
         
         with st.spinner("🔄 Transcribiendo con IA (máxima precisión)..."):
             with open(tmp_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
+                transcription_result = client.audio.transcriptions.create(
                     file=(uploaded_file.name, audio_file.read()), 
                     model=model_option, language=language,
                     response_format="verbose_json", temperature=0.1
                 )
         os.unlink(tmp_path)
         
-        text = fix_spanish_encoding(transcription.text)
+        ### MEJORA: Crear una "única fuente de verdad" para los datos limpios.
+        # 1. Limpiar cada segmento individualmente para asegurar consistencia.
+        cleaned_segments = []
+        for seg in transcription_result.segments:
+            cleaned_text = fix_spanish_encoding(seg['text'])
+            cleaned_segments.append({
+                'start': seg['start'],
+                'end': seg['end'],
+                'text': cleaned_text
+            })
+
+        # 2. Reconstruir el texto completo a partir de los segmentos ya limpios.
+        full_cleaned_text = " ".join([seg['text'].strip() for seg in cleaned_segments])
+        
+        # 3. (Opcional) Aplicar post-procesamiento de Llama al texto completo ya limpio.
         if enable_llama_postprocess:
             with st.spinner("🤖 Mejorando transcripción con IA..."):
-                text = post_process_with_llama(text, client, llama_model_option)
+                full_cleaned_text = post_process_with_llama(full_cleaned_text, client, llama_model_option)
         
-        for seg in transcription.segments:
-            seg['text'] = fix_spanish_encoding(seg['text'])
-        
-        st.session_state.transcription = text
-        st.session_state.transcription_data = transcription
+        # 4. Guardar los datos limpios en el estado de la sesión.
+        st.session_state.transcription = full_cleaned_text
+        st.session_state.segments = cleaned_segments
         
         with st.spinner("🧠 Generando análisis avanzado..."):
-            if enable_summary: st.session_state.summary = generate_summary(text, client, llama_model_option)
-            if enable_entities: st.session_state.entities = extract_all_entities(text, client, llama_model_option)
+            if enable_summary: st.session_state.summary = generate_summary(full_cleaned_text, client, llama_model_option)
+            if enable_entities: st.session_state.entities = extract_all_entities(full_cleaned_text, client, llama_model_option)
         
         st.success("✅ ¡Proceso completado!")
         st.balloons()
@@ -353,7 +350,8 @@ if 'transcription' in st.session_state:
 
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
-                segments, pattern = st.session_state.transcription_data.segments, re.compile(re.escape(search_query), re.IGNORECASE)
+                ### MEJORA: La búsqueda ahora usa los segmentos limpios.
+                segments, pattern = st.session_state.segments, re.compile(re.escape(search_query), re.IGNORECASE)
                 matches = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
                 if matches:
                     st.success(f"✅ {len(matches)} coincidencia(s) encontrada(s).")
@@ -371,8 +369,8 @@ if 'transcription' in st.session_state:
         
         c1, c2, c3, c4 = st.columns([2, 2, 2, 1.5])
         c1.download_button("💾 TXT", st.session_state.transcription, "transcripcion.txt", use_container_width=True)
-        c2.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.transcription_data), "transcripcion_tiempos.txt", use_container_width=True)
-        c3.download_button("💾 SRT", export_to_srt(st.session_state.transcription_data), "subtitulos.srt", use_container_width=True)
+        c2.download_button("💾 TXT con Tiempos", format_transcription_with_timestamps(st.session_state.segments), "transcripcion_tiempos.txt", use_container_width=True)
+        c3.download_button("💾 SRT", export_to_srt(st.session_state), "subtitulos.srt", use_container_width=True)
         with c4: create_copy_button(st.session_state.transcription)
 
     # Pestaña 2: Resumen
@@ -424,7 +422,7 @@ if 'transcription' in st.session_state:
                     
                     with st.expander("Ver contexto y menciones en audio"):
                         st.markdown(f"> {entity.get('context', 'Sin contexto.')}")
-                        segments = st.session_state.transcription_data.segments
+                        segments = st.session_state.segments
                         matches = find_entity_in_segments(entity_name, segments)
                         if matches:
                             st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s):**")
@@ -448,7 +446,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 
 st.markdown("""
 <div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.5.0 (Final Stable)</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión a Mono Estable | 📊 NER Robusto</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.6.0 (Stable)</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | ⚙️ Consistencia de Datos y Correcciones de Bugs</p>
 </div>
 """, unsafe_allow_html=True)
