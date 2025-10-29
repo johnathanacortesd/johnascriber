@@ -14,14 +14,17 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# MEJORA: Reemplazo de moviepy con pydub
 try:
-    from moviepy.editor import VideoFileClip, AudioFileClip
-    MOVIEPY_AVAILABLE = True
+    from pydub import AudioSegment
+    AUDIO_CONVERSION_AVAILABLE = True
 except ImportError:
-    st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará. Instala con: pip install moviepy")
-    MOVIEPY_AVAILABLE = False
+    st.error("Librería `pydub` no encontrada. La conversión de audio no funcionará. Instala con: pip install pydub")
+    st.warning("Además, asegúrate de tener FFmpeg instalado en tu sistema.")
+    AUDIO_CONVERSION_AVAILABLE = False
 
-# --- LÓGICA DE AUTENTICACIÓN ---
+
+# --- LÓGICA DE AUTENTENTICACIÓN (Sin cambios) ---
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
@@ -43,6 +46,7 @@ if not st.session_state.password_correct:
         st.error("❌ Contraseña incorrecta. Inténtalo de nuevo.")
     st.stop()
 
+
 # --- INICIO DE LA APP PRINCIPAL ---
 st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="🎙️", layout="wide")
 
@@ -57,7 +61,7 @@ def set_audio_time(start_seconds): st.session_state.audio_start_time = int(start
 def clear_search_callback(): st.session_state.search_input = ""
 def clear_entity_search_callback(): st.session_state.entity_search = ""
 
-# MEJORA 6: Validación de API Keys
+# --- VALIDACIÓN DE API KEY (Sin cambios) ---
 try:
     api_key = st.secrets["GROQ_API_KEY"]
     if not api_key or len(api_key) < 20: raise ValueError("API Key inválida o no configurada.")
@@ -67,12 +71,12 @@ except (KeyError, ValueError) as e:
     st.info("📖 Guía: Ve a 'Settings' → 'Secrets' en tu app de Streamlit y añade la clave GROQ_API_KEY.")
     st.stop()
 
-# --- DICCIONARIO DE CORRECCIONES ---
+# --- DICCIONARIO DE CORRECCIONES (Sin cambios) ---
 SPANISH_WORD_CORRECTIONS = {
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1', r'\badministraci(?!ón\b)\b': 'administración', r'\bcomunicaci(?!ón\b)\b': 'comunicación', r'\bdeclaraci(?!ón\b)\b': 'declaración', r'\binformaci(?!ón\b)\b': 'información', r'\borganizaci(?!ón\b)\b': 'organización', r'\bpolític(?!a\b)\b': 'política', r'\bRepúblic(?!a\b)\b': 'República', r'\btecnolog(?!ía\b)\b': 'tecnología', r'\bBogot(?!á\b)\b': 'Bogotá', r'\bMéxic(?!o\b)\b': 'México', r'\bPer\b': 'Perú', r'\btambi(?!én\b)\b': 'también', r'\b(P|p)or qu(?!é\b)\b': r'\1or qué', r'\b(Q|q)u(?!é\b)\b': r'\1ué', r'\b(C|c)ómo\b': r'\1ómo', r'\b(C|c)uándo\b': r'\1uándo', r'\b(D|d)ónde\b': r'\1ónde', r'\b(M|m)as\b': r'\1ás',
 }
 
-# --- FUNCIONES AUXILIARES ---
+# --- FUNCIONES AUXILIARES (Sin cambios) ---
 def create_copy_button(text_to_copy):
     text_json, button_id = json.dumps(text_to_copy), f"copy-button-{hash(text_to_copy)}"
     components.html(f"""<button id="{button_id}" style="width: 100%; padding: 0.25rem 0.5rem; border-radius: 0.5rem; border: 1px solid rgba(49, 51, 63, 0.2); background-color: #FFFFFF; color: #31333F;">📋 Copiar Todo</button><script>document.getElementById("{button_id}").onclick = function() {{const textArea = document.createElement("textarea");textArea.value = {text_json};textArea.style.position = "fixed"; document.body.appendChild(textArea);textArea.select();document.execCommand("copy");document.body.removeChild(textArea);const button = document.getElementById("{button_id}");const originalText = button.innerText;button.innerText = "✅ ¡Copiado!";setTimeout(function() {{ button.innerText = originalText; }}, 2000);}};
@@ -91,54 +95,56 @@ def fix_spanish_encoding(text):
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
-# MEJORA 1, 2: Función de conversión robusta y con manejo de recursos/tamaño
+# MEJORA: Función de conversión de audio con pydub
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
-    MAX_FILE_SIZE_MB = 100
-    if len(file_bytes) / (1024 * 1024) > MAX_FILE_SIZE_MB:
-        msg = f"⚠️ Archivo muy grande (>{MAX_FILE_SIZE_MB}MB). Se usará sin optimizar para evitar alto consumo de memoria."
-        logger.warning(msg)
-        return file_bytes, False, msg
+    if not AUDIO_CONVERSION_AVAILABLE:
+        return file_bytes, False, "⚠️ Conversión no disponible. Usando archivo original."
 
-    if not MOVIEPY_AVAILABLE: return file_bytes, False, "MoviePy no disponible."
-
-    st.info(f"Iniciando estandarización de '{filename}' para la IA...")
+    st.info(f"🔄 Iniciando estandarización de '{filename}' para la IA...")
     original_size = len(file_bytes) / (1024 * 1024)
-    file_ext, input_path, output_path = os.path.splitext(filename)[1].lower(), tempfile.mktemp(suffix=file_ext), tempfile.mktemp(suffix=".mp3")
-    with open(input_path, 'wb') as tmp_input: tmp_input.write(file_bytes)
     
-    audio_clip, video_clip = None, None
+    MAX_SIZE_MB = 100
+    if original_size > MAX_SIZE_MB:
+        return file_bytes, False, f"⚠️ Archivo muy grande ({original_size:.1f}MB). Se usará sin optimizar."
+    
+    file_ext = os.path.splitext(filename)[1].lower()
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_input:
+        tmp_input.write(file_bytes)
+        input_path = tmp_input.name
+    
+    output_path = tempfile.mktemp(suffix=".mp3")
+    
     try:
-        try:
-            audio_clip = AudioFileClip(input_path)
-            logger.info("Archivo procesado como audio.")
-        except Exception:
-            logger.warning("No se pudo abrir como audio, intentando como video...")
-            video_clip = VideoFileClip(input_path)
-            if video_clip.audio is None: raise ValueError("El archivo de video no contiene audio.")
-            audio_clip = video_clip.audio
-            logger.info("Audio extraído del video.")
+        audio = AudioSegment.from_file(input_path)
+        logger.info("Archivo cargado con pydub.")
         
-        # SOLUCIÓN: Usar ffmpeg_params para forzar mono (más robusto)
-        audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000, ffmpeg_params=["-ac", "1"])
+        if audio.channels > 1: audio = audio.set_channels(1); logger.info("Audio convertido a mono.")
+        if audio.frame_rate != 16000: audio = audio.set_frame_rate(16000); logger.info("Frecuencia de muestreo ajustada a 16kHz.")
         
-        with open(output_path, 'rb') as f: mp3_bytes = f.read()
+        audio.export(output_path, format="mp3", bitrate=target_bitrate, parameters=["-ac", "1"])
+        
+        with open(output_path, 'rb') as f:
+            mp3_bytes = f.read()
+        
         final_size = len(mp3_bytes) / (1024 * 1024)
-        msg = f"✅ Audio estandarizado a 16kHz/Mono: {original_size:.2f} MB → {final_size:.2f} MB"
-        logger.info(msg)
+        if final_size < 0.001: raise ValueError("El archivo procesado está vacío o es muy pequeño.")
+        
+        msg = f"✅ Audio estandarizado: {original_size:.2f} MB → {final_size:.2f} MB (16kHz/Mono)"
         return mp3_bytes, True, msg
         
     except Exception as e:
-        msg = f"⚠️ Falló la estandarización de audio: **{str(e)}**. Se usará el archivo original."
+        error_msg = f"⚠️ Falló la estandarización con pydub: **{str(e)}**. Se usará el archivo original."
         logger.error(f"Error en convert_to_optimized_mp3: {e}")
-        return file_bytes, False, msg
+        st.warning(error_msg)
+        return file_bytes, False, error_msg
         
     finally:
-        if audio_clip: audio_clip.close()
-        if video_clip: video_clip.close()
         if os.path.exists(input_path): os.unlink(input_path)
         if os.path.exists(output_path): os.unlink(output_path)
 
-# --- FUNCIÓN ROBUSTA PARA LLAMADAS A LA IA ---
+
+# --- FUNCIONES DE ANÁLISIS Y LLAMADAS A LA IA (Sin cambios) ---
 def robust_llama_completion(client, messages, model, max_retries=3, **kwargs):
     for attempt in range(max_retries):
         try:
@@ -146,16 +152,13 @@ def robust_llama_completion(client, messages, model, max_retries=3, **kwargs):
             return chat_completion.choices[0].message.content
         except (RateLimitError, APIStatusError) as e:
             if e.status_code in [429, 503] and attempt < max_retries - 1:
-                wait_time = 2 ** attempt
-                st.warning(f"🤖 Modelo '{model}' sobrecargado. Reintentando en {wait_time}s...")
-                time.sleep(wait_time)
+                wait_time = 2 ** attempt; st.warning(f"🤖 Modelo '{model}' sobrecargado. Reintentando en {wait_time}s..."); time.sleep(wait_time)
             else:
                 st.error(f"❌ Error de API persistente con '{model}': {str(e)}"); logger.error(f"API Error con {model}: {e}"); return None
         except Exception as e:
             st.error(f"❌ Error inesperado al llamar a la IA: {str(e)}"); logger.error(f"Unexpected IA Error: {e}"); return None
     return None
 
-# --- FUNCIONES DE ANÁLISIS ---
 def post_process_with_llama(text, client, model):
     messages = [{"role": "system", "content": "Tu única tarea es corregir tildes y completar palabras comunes en transcripciones (ej. `informaci` -> `información`). No añadas, elimines ni reescribas nada. Devuelve solo el texto corregido."},
                 {"role": "user", "content": f"Corrige el siguiente texto:\n\n{text}"}]
@@ -186,7 +189,6 @@ Ejemplo: {"entidades": [{"name": "Dr. Carlos Rivas", "category": "Persona", "con
         return validated
     except (json.JSONDecodeError, TypeError): return []
 
-# --- FUNCIONES DE EXPORTACIÓN Y BÚSQUEDA ---
 def get_extended_context(segments, match_index, context_range=2):
     start_idx, end_idx = max(0, match_index - context_range), min(len(segments), match_index + context_range + 1)
     return [{'text': s['text'].strip(), 'time': format_timestamp(s['start']), 'start': s['start'], 'is_match': i == match_index} for i, s in enumerate(segments) if start_idx <= i < end_idx]
@@ -199,7 +201,6 @@ def export_to_srt(data):
         lines.append(f"{i}\n{start_str} --> {end_str}\n{seg['text'].strip()}\n")
     return "\n".join(lines)
 
-# MEJORA 7: Optimización de búsqueda con caché
 @st.cache_data
 def find_entity_in_segments_cached(entity_name, segments_json):
     segments = json.loads(segments_json)
@@ -208,7 +209,6 @@ def find_entity_in_segments_cached(entity_name, segments_json):
         if pattern.search(seg['text']): matches.append(i)
     return matches
 
-# MEJORA 4: Función para cache
 def get_file_hash(file_bytes): return hashlib.md5(file_bytes).hexdigest()
 
 # --- INTERFAZ DE LA APP ---
@@ -219,30 +219,24 @@ with st.sidebar:
     llama_model_option = st.selectbox("Modelo de Llama para Análisis", ["llama-3.1-8b-instant", "llama-3.1-70b-versatile"], help="Elige 'instant' para velocidad o 'versatile' para máxima calidad.")
     enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True); enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True); enable_entities = st.checkbox("📊 Extraer Entidades", value=True)
     st.markdown("---"); st.subheader("🔍 Búsqueda Contextual"); context_lines = st.slider("Líneas de contexto", 1, 5, 2); st.markdown("---")
-    if MOVIEPY_AVAILABLE: st.success("✅ **Estandarización de Audio Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
-    else: st.warning("⚠️ **Optimización Desactivada:** `moviepy` no está instalado.")
+    if AUDIO_CONVERSION_AVAILABLE: st.success("✅ **Estandarización con Pydub Activada:** Convierte todo a formato ideal para la IA (16kHz, Mono).")
+    else: st.warning("⚠️ **Optimización Desactivada:** `pydub` o `ffmpeg` no están instalados.")
 
 st.subheader("📤 Sube tu archivo de audio o video")
-uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "avi", "mov"], label_visibility="collapsed")
+uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "avi", "mov", "ogg", "flac"], label_visibility="collapsed")
 
 if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
+    # Lógica principal de procesamiento (sin cambios)
     for key in list(st.session_state.keys()):
         if key not in ['password_correct', 'password_attempted'] and not key.startswith("transcription_"): del st.session_state[key]
     st.session_state.qa_history = []
     
-    file_bytes = uploaded_file.getvalue()
-    file_hash = get_file_hash(file_bytes)
+    file_bytes = uploaded_file.getvalue(); file_hash = get_file_hash(file_bytes)
     
-    # MEJORA 4: Lógica de caché
     if file_hash in st.session_state:
-        st.success("✅ ¡Transcripción encontrada en caché! Cargando resultados...")
-        st.session_state.update(st.session_state[file_hash])
-        time.sleep(1)
-        st.rerun()
+        st.success("✅ ¡Transcripción encontrada en caché! Cargando resultados..."); st.session_state.update(st.session_state[file_hash]); time.sleep(1); st.rerun()
     
-    # MEJORA 5: Barra de Progreso
     progress_bar = st.progress(0, text="Iniciando proceso...")
-    
     try:
         progress_bar.progress(10, text="🔄 Estandarizando audio para máxima precisión...")
         processed_bytes, was_converted, conv_message = convert_to_optimized_mp3(file_bytes, uploaded_file.name)
@@ -252,11 +246,9 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
             tmp.write(processed_bytes); tmp_path = tmp.name
 
-        # MEJORA 3: Manejo de errores en transcripción
         file_size_mb = os.path.getsize(tmp_path) / (1024 * 1024)
         if file_size_mb > 25:
-            st.error(f"❌ Archivo procesado muy grande ({file_size_mb:.1f}MB). La API de Groq acepta un máximo de 25MB.")
-            os.unlink(tmp_path); st.stop()
+            st.error(f"❌ Archivo procesado muy grande ({file_size_mb:.1f}MB). La API de Groq acepta un máximo de 25MB."); os.unlink(tmp_path); st.stop()
         
         progress_bar.progress(30, text="🎙️ Transcribiendo con IA (puede tardar varios minutos)...")
         with open(tmp_path, "rb") as audio_file:
@@ -272,25 +264,20 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
         for seg in transcription.segments: seg['text'] = fix_spanish_encoding(seg['text'])
         
         session_data = {'transcription': text, 'transcription_data': transcription, 'uploaded_audio_bytes': processed_bytes}
-        
         progress_bar.progress(80, text="🧠 Generando análisis avanzado...")
         if enable_summary: session_data['summary'] = generate_summary(text, client, llama_model_option)
         if enable_entities: session_data['entities'] = extract_all_entities(text, client, llama_model_option)
         
-        st.session_state.update(session_data)
-        st.session_state[file_hash] = session_data # Guardar en caché
+        st.session_state.update(session_data); st.session_state[file_hash] = session_data
         
-        progress_bar.progress(100, text="✅ ¡Proceso completado!")
-        time.sleep(1); progress_bar.empty(); st.success("✅ ¡Proceso completado!")
-        st.balloons()
-        st.rerun()
+        progress_bar.progress(100, text="✅ ¡Proceso completado!"); time.sleep(1); progress_bar.empty(); st.success("✅ ¡Proceso completado!"); st.balloons(); st.rerun()
 
     except Exception as e:
         logger.error(f"Error crítico en el proceso de transcripción: {e}", exc_info=True)
         st.error(f"❌ Error crítico: {e}")
         if 'progress_bar' in locals(): progress_bar.empty()
 
-# --- SECCIÓN DE RESULTADOS ---
+# --- SECCIÓN DE RESULTADOS (Sin cambios) ---
 if 'transcription' in st.session_state:
     st.markdown("---"); st.subheader("🎧 Reproduce y Analiza"); st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
@@ -346,14 +333,13 @@ if 'transcription' in st.session_state:
             if not filtered_entities: st.info("No se encontraron entidades con los filtros seleccionados.")
             else:
                 st.success(f"Mostrando {len(filtered_entities)} de {len(entities)} entidades totales.")
-                segments = st.session_state.transcription_data.segments
-                segments_json = json.dumps([{'text': s['text'], 'start': s['start']} for s in segments])
+                segments = st.session_state.transcription_data.segments; segments_json = json.dumps([{'text': s['text'], 'start': s['start']} for s in segments])
                 for entity in filtered_entities:
                     entity_name, entity_cat = entity.get('name'), entity.get('category')
                     st.markdown(f"**{entity_name}** | **Categoría:** `{entity_cat}`")
                     with st.expander("Ver contexto y menciones en audio"):
                         st.markdown(f"> {entity.get('context', 'Sin contexto.')}")
-                        matches = find_entity_in_segments_cached(entity_name, segments_json) # Uso de función cacheada
+                        matches = find_entity_in_segments_cached(entity_name, segments_json)
                         if matches:
                             st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s):**")
                             for match_idx in matches:
@@ -373,4 +359,4 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
     st.session_state.password_correct = pwd_ok
     st.rerun()
 
-st.markdown("""<div style='text-align: center; color: #666; margin-top: 2rem;'><p><strong>Transcriptor Pro - Johnascriptor - v4.5 (Mejorado)</strong></p><p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 | 🚀 Caché y Progreso | 🔒 Robustez Mejorada</p></div>""", unsafe_allow_html=True)
+st.markdown("""<div style='text-align: center; color: #666; margin-top: 2rem;'><p><strong>Transcriptor Pro - Johnascriptor - v5.0 (Pydub Engine)</strong></p><p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 | 🎵 Conversión con Pydub | 🚀 Caché y Progreso</p></div>""", unsafe_allow_html=True)
