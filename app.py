@@ -100,7 +100,7 @@ def fix_spanish_encoding(text):
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
-### MEJORA: Lógica de conversión de audio con conversión explícita a MONO.
+### MEJORA: Lógica de conversión de audio corregida para usar el método correcto `.set_channels(1)`.
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
     if not MOVIEPY_AVAILABLE:
         return file_bytes, False, "MoviePy no disponible."
@@ -127,15 +127,22 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
             audio_clip = video_clip.audio
             st.info("Audio extraído del video.")
         
-        # Estandarización: 16kHz, 1 canal (Mono), 96kbps
-        audio_clip.write_audiofile(
+        # --- INICIO DE LA CORRECCIÓN ---
+        # 1. Crear una versión mono del clip
+        mono_audio_clip = audio_clip.set_channels(1)
+
+        # 2. Escribir el nuevo clip mono sin el argumento 'nchannels'
+        mono_audio_clip.write_audiofile(
             output_path, 
             codec='libmp3lame', 
             bitrate=target_bitrate, 
-            fps=16000, 
-            nchannels=1 # Forzar a mono para máxima precisión y eficiencia
+            fps=16000
         )
+        
+        # 3. Cerrar ambos clips para liberar recursos
+        mono_audio_clip.close()
         audio_clip.close()
+        # --- FIN DE LA CORRECCIÓN ---
 
         with open(output_path, 'rb') as f:
             mp3_bytes = f.read()
@@ -190,7 +197,6 @@ def answer_question(question, text, client, history, model):
     messages.append({"role": "user", "content": f"Transcripción:\n---\n{text}\n---\nPregunta: {question}"})
     return robust_llama_completion(client, messages, model=model, temperature=0.2, max_tokens=2048) or "No se pudo procesar la pregunta."
 
-### MEJORA: Prompt de extracción de entidades reforzado y lógica de parseo tolerante a fallos.
 def extract_all_entities(text, client, model):
     messages = [
         {"role": "system", "content": """
@@ -217,14 +223,12 @@ REGLAS ESTRICTAS:
     if not response_json_str: return []
     try:
         data = json.loads(response_json_str)
-        # Limpieza y validación de la respuesta del modelo
         validated_entities = []
         for entity in data.get('entidades', []):
-            # Lógica tolerante a fallos: busca claves en inglés y español
             name = entity.get('name') or entity.get('nombre')
             category = entity.get('category') or entity.get('categoría')
             context = entity.get('context') or entity.get('contexto')
-            if name and category: # Solo añade la entidad si tiene nombre y categoría
+            if name and category:
                 validated_entities.append({'name': name, 'category': category, 'context': context})
         return validated_entities
     except (json.JSONDecodeError, TypeError):
@@ -340,7 +344,6 @@ if 'transcription' in st.session_state:
     
     # Pestaña 1: Transcripción
     with tabs[0]:
-        ### MEJORA: Estilos CSS actualizados para fondo negro y letra blanca.
         HIGHLIGHT_STYLE = "background-color: #FFD700; color: black; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
         MATCH_STYLE = "background-color: #1a1a2e; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311;"
         CONTEXT_STYLE = "background-color: #1f1f1f; padding: 0.6rem; border-radius: 4px;"
@@ -418,7 +421,6 @@ if 'transcription' in st.session_state:
             else:
                 st.success(f"Mostrando {len(filtered_entities)} de {len(entities)} entidades totales.")
                 for entity in filtered_entities:
-                    ### MEJORA: La lógica de parseo en `extract_all_entities` asegura que estos campos ya no sean N/A.
                     entity_name, entity_cat = entity.get('name'), entity.get('category')
                     st.markdown(f"**{entity_name}** | **Categoría:** `{entity_cat}`")
                     
@@ -448,7 +450,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 
 st.markdown("""
 <div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.4.0</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Estandarización de Audio | 📊 NER Robusto</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.4.1 (Bugfix)</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión a Mono Corregida | 📊 NER Robusto</p>
 </div>
 """, unsafe_allow_html=True)
