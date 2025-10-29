@@ -1,21 +1,23 @@
 import streamlit as st
-from groq import Groq
+from groq import Groq, RateLimitError, APIStatusError
 import tempfile
 import os
 import json
 import re
+import time
 import streamlit.components.v1 as components
 from datetime import timedelta
 from collections import Counter
 
-# Importar para conversión de audio
+# MEJORADO: Importación de moviepy con manejo claro de su disponibilidad
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
     MOVIEPY_AVAILABLE = True
 except ImportError:
+    st.error("Librería `moviepy` no encontrada. La conversión de audio no funcionará. Instala con: pip install moviepy")
     MOVIEPY_AVAILABLE = False
 
-# --- LÓGICA DE AUTENTICACIÓN ROBUSTA ---
+# --- LÓGICA DE AUTENTICACIÓN (Sin cambios) ---
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
@@ -57,11 +59,10 @@ if 'qa_history' not in st.session_state:
 if 'brands_search' not in st.session_state:
     st.session_state.brands_search = ""
 
-# --- FUNCIÓN CALLBACK PARA CAMBIAR EL TIEMPO DEL AUDIO ---
+# --- FUNCIONES CALLBACK (Sin cambios) ---
 def set_audio_time(start_seconds):
     st.session_state.audio_start_time = int(start_seconds)
 
-# --- FUNCIÓN CALLBACK PARA LIMPIAR BÚSQUEDA ---
 def clear_search_callback():
     st.session_state.search_input = ""
 
@@ -70,12 +71,13 @@ def clear_brands_search_callback():
 
 try:
     api_key = st.secrets["GROQ_API_KEY"]
+    client = Groq(api_key=api_key)
 except KeyError:
     st.error("❌ Error: No se encontró GROQ_API_KEY en los secrets de Streamlit")
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- DICCIONARIO DE CORRECCIONES ---
+# --- DICCIONARIO DE CORRECCIONES (Sin cambios) ---
 SPANISH_WORD_CORRECTIONS = {
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
     r'\badministraci(?!ón\b)\b': 'administración', r'\bAdministraci(?!ón\b)\b': 'Administración',
@@ -93,7 +95,7 @@ SPANISH_WORD_CORRECTIONS = {
     r'\b(M|m)as\b': r'\1ás',
 }
 
-# --- FUNCIONES AUXILIARES ---
+# --- FUNCIONES AUXILIARES (Sin cambios) ---
 def create_copy_button(text_to_copy):
     text_json = json.dumps(text_to_copy)
     button_id = f"copy-button-{hash(text_to_copy)}"
@@ -129,117 +131,86 @@ def fix_spanish_encoding(text):
         result = result[0].upper() + result[1:]
     return result.strip()
 
-# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN MEJORADAS ---
+# --- MEJORADO: FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
 def get_file_size_mb(file_bytes):
-    """Calcula el tamaño del archivo en MB"""
     return len(file_bytes) / (1024 * 1024)
 
-def universal_audio_converter(file_bytes, filename, target_bitrate='96k'):
-    """
-    Convierte cualquier archivo de audio/video a MP3 optimizado para transcripción
-    CORREGIDO: Ahora convierte correctamente archivos mayores a 8MB
-    """
-    try:
-        original_size = get_file_size_mb(file_bytes)
-        file_ext = os.path.splitext(filename)[1].lower()
-        
-        # CORRECCIÓN: Si es MP3 pequeño Y ya optimizado, no convertir
-        # Pero si es MP3 grande, SÍ convertir
-        if file_ext == '.mp3' and original_size < 8:
-            return file_bytes, False, original_size, original_size
-        
-        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_input:
-            tmp_input.write(file_bytes)
-            input_path = tmp_input.name
-        
-        output_path = input_path.rsplit('.', 1)[0] + '_converted.mp3'
-        
-        try:
-            if file_ext in ['.mp4', '.mpeg', '.webm', '.avi', '.mov', '.mkv']:
-                video = VideoFileClip(input_path)
-                video.audio.write_audiofile(
-                    output_path, 
-                    codec='libmp3lame', 
-                    bitrate=target_bitrate,
-                    fps=16000,
-                    nbytes=2,
-                    verbose=False, 
-                    logger=None
-                )
-                video.close()
-            else:
-                audio = AudioFileClip(input_path)
-                audio.write_audiofile(
-                    output_path, 
-                    codec='libmp3lame', 
-                    bitrate=target_bitrate,
-                    fps=16000,
-                    nbytes=2,
-                    verbose=False, 
-                    logger=None
-                )
-                audio.close()
-            
-            with open(output_path, 'rb') as f:
-                mp3_bytes = f.read()
-            
-            final_size = get_file_size_mb(mp3_bytes)
-            os.unlink(input_path)
-            os.unlink(output_path)
-            return mp3_bytes, True, original_size, final_size
-            
-        except Exception as e:
-            os.unlink(input_path)
-            if os.path.exists(output_path): 
-                os.unlink(output_path)
-            return file_bytes, False, original_size, original_size
-            
-    except Exception:
-        return file_bytes, False, 0, 0
+def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
+    if not MOVIEPY_AVAILABLE:
+        return file_bytes, False, "MoviePy no disponible."
 
-def process_audio_for_transcription(uploaded_file):
-    """
-    CORREGIDO: Procesa correctamente archivos grandes
-    """
-    file_bytes = uploaded_file.getvalue()
     original_size = get_file_size_mb(file_bytes)
-    file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+    file_ext = os.path.splitext(filename)[1].lower()
     
-    # CORRECCIÓN: Lógica simplificada y correcta
-    should_convert = (
-        file_ext != '.mp3' or  # Convertir si NO es MP3
-        original_size > 8      # O si es MP3 pero grande
-    )
+    with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_input:
+        tmp_input.write(file_bytes)
+        input_path = tmp_input.name
     
-    if should_convert and MOVIEPY_AVAILABLE:
-        processed_bytes, was_converted, orig_mb, final_mb = universal_audio_converter(file_bytes, uploaded_file.name)
-        if was_converted and final_mb < orig_mb:
-            reduction = ((orig_mb - final_mb) / orig_mb * 100) if orig_mb > 0 else 0
-            msg = f"✅ Archivo optimizado: {orig_mb:.2f} MB → {final_mb:.2f} MB (-{reduction:.1f}%) | 96kbps mono 16kHz"
-            return processed_bytes, {'converted': True, 'message': msg}
-        elif was_converted:
-            msg = f"✅ Convertido a MP3 optimizado: {final_mb:.2f} MB | 96kbps mono 16kHz"
-            return processed_bytes, {'converted': True, 'message': msg}
+    output_path = input_path.rsplit('.', 1)[0] + '_converted.mp3'
+    
+    try:
+        if file_ext in ['.mp4', '.mpeg', '.webm', '.avi', '.mov', '.mkv']:
+            with VideoFileClip(input_path) as video:
+                video.audio.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000, nbytes=2, verbose=False, logger=None)
         else:
-            return file_bytes, {'converted': False, 'message': f"⚠️ No se pudo optimizar, usando original ({original_size:.2f} MB)."}
-    elif not MOVIEPY_AVAILABLE:
-        return file_bytes, {'converted': False, 'message': f"⚠️ MoviePy no disponible. Usando archivo original ({original_size:.2f} MB)."}
-    else:
-        return file_bytes, {'converted': False, 'message': f"📁 Archivo ya optimizado ({original_size:.2f} MB)."}
+            with AudioFileClip(input_path) as audio:
+                audio.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000, nbytes=2, verbose=False, logger=None)
+        
+        with open(output_path, 'rb') as f:
+            mp3_bytes = f.read()
+            
+        final_size = get_file_size_mb(mp3_bytes)
+        reduction = ((original_size - final_size) / original_size * 100) if original_size > 0 else 0
+        
+        if final_size < original_size:
+            msg = f"✅ Archivo optimizado para transcripción: {original_size:.2f} MB → {final_size:.2f} MB (reducción del {reduction:.1f}%)"
+        else:
+            msg = f"✅ Archivo convertido a MP3 optimizado: {final_size:.2f} MB"
+            
+        return mp3_bytes, True, msg
+        
+    except Exception as e:
+        msg = f"⚠️ Falló la optimización de audio: {str(e)}. Se usará el archivo original."
+        return file_bytes, False, msg
+        
+    finally:
+        if os.path.exists(input_path): os.unlink(input_path)
+        if os.path.exists(output_path): os.unlink(output_path)
 
-# --- FUNCIÓN DE POST-PROCESAMIENTO CON FALLBACK ---
-def post_process_with_llama(transcription_text, client, fallback_models=None):
+# --- NUEVO: FUNCIÓN ROBUSTA PARA LLAMADAS A LA IA ---
+def robust_llama_completion(client, messages, model, fallback_model=None, max_retries=3, **kwargs):
     """
-    MEJORADO: Fallback automático a modelos alternativos si el primero falla
+    Realiza una llamada a la API de Groq con reintentos y fallback opcional.
     """
-    if fallback_models is None:
-        fallback_models = [
-            "llama-3.1-8b-instant",
-            "llama-3.3-70b-versatile",
-            "mixtral-8x7b-32768"
-        ]
-    
-    system_prompt = """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
+    current_model = model
+    for attempt in range(max_retries):
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=messages,
+                model=current_model,
+                **kwargs
+            )
+            return chat_completion.choices[0].message.content
+        except (RateLimitError, APIStatusError) as e:
+            if e.status_code in [429, 503] and attempt < max_retries - 1:
+                wait_time = 2 ** attempt
+                st.warning(f"🤖 Modelo '{current_model}' sobrecargado. Reintentando en {wait_time}s... (Intento {attempt + 1}/{max_retries})")
+                time.sleep(wait_time)
+                # Opcional: Cambiar a modelo de fallback
+                if fallback_model:
+                    current_model = fallback_model
+            else:
+                st.error(f"❌ Error de API persistente con '{current_model}': {str(e)}")
+                return None
+        except Exception as e:
+            st.error(f"❌ Error inesperado al llamar a la IA: {str(e)}")
+            return None
+    return None
+
+# --- FUNCIONES DE ANÁLISIS (ADAPTADAS PARA USAR robust_llama_completion) ---
+def post_process_with_llama(transcription_text, client):
+    messages = [
+        {"role": "system", "content": """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
 
 **REGLAS INVIOLABLES:**
 1.  **ACENTUACIÓN PRECISA:** Tu tarea principal es añadir tildes faltantes a palabras que inequívocamente las requieren (ej: `como` -> `cómo`, `esta` -> `está`, `mas` -> `más`).
@@ -248,92 +219,33 @@ def post_process_with_llama(transcription_text, client, fallback_models=None):
 4.  **PROHIBIDO INVENTAR, OMITIR O REESCRIBIR:** No puedes añadir, eliminar ni cambiar el orden de las palabras. No puedes reescribir frases.
 5.  **DEVOLVER TEXTO ÍNTEGRO:** Siempre devolverás el texto completo, aplicando únicamente las correcciones permitidas.
 
-Tu salida debe ser únicamente el texto corregido."""
-    
-    for i, model in enumerate(fallback_models):
-        try:
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
-                ],
-                model=model,
-                temperature=0.0,
-                max_tokens=4096
-            )
-            if i > 0:  # Solo mostrar mensaje si se usó fallback
-                st.info(f"ℹ️ Usando modelo alternativo: {model}")
-            return chat_completion.choices[0].message.content.strip()
-        except Exception as e:
-            error_msg = str(e).lower()
-            if 'rate_limit' in error_msg or 'capacity' in error_msg or 'overloaded' in error_msg:
-                if i < len(fallback_models) - 1:
-                    st.warning(f"⚠️ {model} no disponible, intentando con {fallback_models[i+1]}...")
-                    continue
-            st.warning(f"⚠️ No se pudo aplicar post-procesamiento con IA: {str(e)}")
-            return transcription_text
-    
-    return transcription_text
+Tu salida debe ser únicamente el texto corregido."""},
+        {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
+    ]
+    corrected_text = robust_llama_completion(client, messages, model="llama-3.1-8b-instant", temperature=0.0, max_tokens=4096)
+    return corrected_text if corrected_text else transcription_text
 
-# --- FUNCIONES DE ANÁLISIS CON FALLBACK ---
 def generate_summary(transcription_text, client):
-    """MEJORADO: Con fallback a modelos alternativos"""
-    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
-    
-    for model in models:
-        try:
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
-                    {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto:\n\n{transcription_text}"}
-                ],
-                model=model,
-                temperature=0.3,
-                max_tokens=500
-            )
-            return chat_completion.choices[0].message.content
-        except Exception as e:
-            if 'rate_limit' in str(e).lower() or 'capacity' in str(e).lower():
-                continue
-            return f"Error al generar resumen: {str(e)}"
-    
-    return "No se pudo generar el resumen debido a límites de capacidad."
+    messages = [
+        {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
+        {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto:\n\n{transcription_text}"}
+    ]
+    summary = robust_llama_completion(client, messages, model="llama-3.1-8b-instant", temperature=0.3, max_tokens=500)
+    return summary if summary else "No se pudo generar el resumen debido a un error."
 
 def answer_question(question, transcription_text, client, conversation_history):
-    """MEJORADO: Con fallback a modelos alternativos"""
-    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
+    messages = [{"role": "system", "content": "Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción de manera precisa y concisa, basándote ÚNICAMENTE en la información proporcionada. Si la información no está en la transcripción, indícalo claramente. Considera el historial de la conversación para preguntas de seguimiento."}]
+    for qa in conversation_history:
+        messages.append({"role": "user", "content": qa["question"]})
+        messages.append({"role": "assistant", "content": qa["answer"]})
+    messages.append({"role": "user", "content": f"Transcripción:\n---\n{transcription_text}\n---\nPregunta: {question}"})
     
-    for model in models:
-        try:
-            messages = [{"role": "system", "content": "Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción de manera precisa y concisa, basándote ÚNICAMENTE en la información proporcionada. Si la información no está en la transcripción, indícalo claramente. Considera el historial de la conversación para preguntas de seguimiento."}]
-            for qa in conversation_history:
-                messages.append({"role": "user", "content": qa["question"]})
-                messages.append({"role": "assistant", "content": qa["answer"]})
-            messages.append({"role": "user", "content": f"Transcripción:\n---\n{transcription_text}\n---\nPregunta: {question}"})
-            
-            chat_completion = client.chat.completions.create(
-                messages=messages,
-                model=model,
-                temperature=0.2,
-                max_tokens=800
-            )
-            return chat_completion.choices[0].message.content
-        except Exception as e:
-            if 'rate_limit' in str(e).lower() or 'capacity' in str(e).lower():
-                continue
-            return f"Error al procesar la pregunta: {str(e)}"
-    
-    return "No se pudo procesar la pregunta debido a límites de capacidad."
+    answer = robust_llama_completion(client, messages, model="llama-3.1-8b-instant", temperature=0.2, max_tokens=800)
+    return answer if answer else "No se pudo procesar la pregunta debido a un error."
 
 def extract_people_and_roles(transcription_text, client):
-    """MEJORADO: Con fallback y manejo robusto de errores"""
-    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
-    
-    for model in models:
-        try:
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las personas mencionadas.
+    messages=[
+        {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las personas mencionadas.
 REGLAS:
 1. Extrae nombres completos de personas (NO organizaciones)
 2. Incluye el cargo/rol si se menciona, sino usa "Rol no especificado"
@@ -341,39 +253,21 @@ REGLAS:
 FORMATO DE SALIDA (JSON válido):
 { "personas": [ { "name": "Nombre", "role": "Cargo", "context": "Contexto" } ] }
 Si no hay personas, devuelve: {"personas": []}'''},
-                    {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:3000]}"}
-                ],
-                model=model,
-                temperature=0.0,
-                max_tokens=1500,
-                response_format={"type": "json_object"}
-            )
-            data = json.loads(chat_completion.choices[0].message.content)
-            
-            people = data.get('personas', data.get('people', [] if not isinstance(data, list) else data))
-            validated = []
-            for person in people:
-                if isinstance(person, dict):
-                    validated.append({
-                        "name": person.get('name', person.get('nombre', 'Desconocido')),
-                        "role": person.get('role', person.get('rol', 'Rol no especificado')),
-                        "context": person.get('context', person.get('contexto', 'Sin contexto'))
-                    })
-            return validated
-        except Exception:
-            continue
+        {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:3500]}"}
+    ]
+    response_json = robust_llama_completion(client, messages, model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"})
     
-    return []
+    try:
+        if not response_json: return []
+        data = json.loads(response_json)
+        people = data.get('personas', [])
+        return people
+    except (json.JSONDecodeError, TypeError):
+        return []
 
 def extract_brands_and_entities(transcription_text, client):
-    """MEJORADO: Con fallback y manejo robusto de errores"""
-    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
-    
-    for model in models:
-        try:
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las marcas, empresas y organizaciones.
+    messages=[
+        {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las marcas, empresas y organizaciones.
 REGLAS:
 1. Extrae nombres de entidades (NO personas)
 2. Clasifica como: Empresa, Institución, ONG, Marca, Organización
@@ -381,30 +275,20 @@ REGLAS:
 FORMATO DE SALIDA (JSON válido):
 { "entidades": [ { "name": "Nombre", "type": "Tipo", "context": "Contexto exacto de la transcripción" } ] }
 Si no hay entidades, devuelve: {"entidades": []}'''},
-                    {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:4000]}"}
-                ],
-                model=model,
-                temperature=0.0,
-                max_tokens=2000,
-                response_format={"type": "json_object"}
-            )
-            data = json.loads(chat_completion.choices[0].message.content)
-            
-            brands = data.get('entidades', data.get('entities', data.get('marcas', [] if not isinstance(data, list) else data)))
-            validated = []
-            for brand in brands:
-                if isinstance(brand, dict):
-                    validated.append({
-                        "name": brand.get('name', brand.get('nombre', 'Desconocido')),
-                        "type": brand.get('type', brand.get('tipo', 'Tipo no especificado')),
-                        "context": brand.get('context', brand.get('contexto', 'Sin contexto'))
-                    })
-            return validated
-        except Exception:
-            continue
-    
-    return []
+        {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:4000]}"}
+    ]
+    response_json = robust_llama_completion(client, messages, model="llama-3.1-8b-instant", temperature=0.0, max_tokens=2000, response_format={"type": "json_object"})
 
+    try:
+        if not response_json: return []
+        data = json.loads(response_json)
+        brands = data.get('entidades', [])
+        return brands
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+# --- FUNCIONES DE EXPORTACIÓN Y BÚSQUEDA (Sin cambios) ---
 def get_extended_context(segments, match_index, context_range=2):
     start_idx = max(0, match_index - context_range)
     end_idx = min(len(segments), match_index + context_range + 1)
@@ -422,7 +306,6 @@ def export_to_srt(data):
     return "\n".join(srt_content)
 
 def find_brand_in_segments(brand_name, segments):
-    """Busca una marca en los segmentos y devuelve las coincidencias con timestamps"""
     matches = []
     pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
     for i, seg in enumerate(segments):
@@ -434,60 +317,36 @@ def find_brand_in_segments(brand_name, segments):
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
-    st.header("⚙️ Configuración")
-    
-    # NUEVO: Selector de modelo Whisper
-    whisper_model = st.selectbox(
-        "Modelo Whisper", 
-        ["whisper-large-v3", "whisper-large-v3-turbo"],
-        help="whisper-large-v3: Máxima precisión | whisper-large-v3-turbo: Más rápido, buena precisión"
+    st.header("⚙️ Configuración de Transcripción")
+    # MEJORADO: Clarificación del nombre del modelo
+    model_option = st.selectbox(
+        "Modelo de Transcripción", 
+        ["whisper-large-v3"], 
+        help="El modelo más preciso disponible para transcripción de audio en español."
     )
-    
-    language = st.selectbox("Idioma", ["es"], help="Español para máxima calidad.")
-    
-    # NUEVO: Configuración de temperatura para Whisper
-    with st.expander("🔧 Configuración Avanzada de Transcripción"):
-        whisper_temp = st.slider(
-            "Temperatura Whisper", 
-            0.0, 1.0, 0.0, 0.1,
-            help="0.0 = más conservador y preciso | Mayor = más creativo pero puede inventar"
-        )
-        use_prompt = st.checkbox(
-            "Usar prompt de contexto", 
-            value=False,
-            help="Añade un prompt para mejorar la precisión en terminología específica"
-        )
-        if use_prompt:
-            custom_prompt = st.text_area(
-                "Prompt personalizado",
-                value="Esta es una transcripción en español con terminología técnica y nombres propios.",
-                help="Whisper usará esto como contexto para mejorar la transcripción"
-            )
+    language = st.selectbox("Idioma del Audio", ["es"], help="Seleccionar 'es' para español maximiza la precisión.")
     
     st.markdown("---")
-    st.subheader("🎯 Análisis Inteligente")
-    enable_llama_postprocess = st.checkbox("🤖 Post-procesamiento IA", value=True, help="Usa Llama-3.1 para corregir tildes (con fallback automático).")
-    enable_summary = st.checkbox("📝 Generar resumen", value=True)
-    enable_people = st.checkbox("👥 Extraer personas", value=True)
-    enable_brands = st.checkbox("🏢 Extraer marcas", value=True)
+    st.subheader("🤖 Análisis con IA")
+    enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True, help="Usa Llama-3.1 para corregir tildes y errores comunes.")
+    enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True)
+    enable_people = st.checkbox("👥 Extraer personas y cargos", value=True)
+    enable_brands = st.checkbox("🏢 Extraer marcas y organizaciones", value=True)
     
     st.markdown("---")
     st.subheader("🔍 Búsqueda Contextual")
-    context_lines = st.slider("Líneas de contexto", 1, 5, 2, help="Líneas antes y después.")
+    context_lines = st.slider("Líneas de contexto para búsqueda", 1, 5, 2, help="Número de frases a mostrar antes y después de una coincidencia.")
     
     st.markdown("---")
     if MOVIEPY_AVAILABLE:
         st.success("""
-        ✅ **Optimización Activada:**
-        - Conversión automática a MP3 96kbps
-        - Mono 16kHz (óptimo para voz)
-        - Compresión de archivos grandes
-        - Máxima velocidad y precisión
+        ✅ **Optimización de Audio Activada:**
+        Todos los archivos se convierten a formato MP3 (96kbps, 16kHz mono) para máxima velocidad y precisión.
         """)
     else:
-        st.warning("⚠️ MoviePy no disponible. Instala con: `pip install moviepy`")
+        st.warning("⚠️ **Optimización Desactivada:** La librería `moviepy` no está instalada.")
     
-    st.info("💡 Formatos soportados: MP3, MP4, WAV, M4A, WEBM, AVI, MOV, etc.")
+    st.info("💡 Soportado: MP3, MP4, WAV, M4A, WEBM, AVI, MOV, etc.")
     st.success("✅ API Key configurada.")
 
 st.subheader("📤 Sube tu archivo de audio o video")
@@ -496,48 +355,44 @@ with col1:
     uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga", "avi", "mov", "mkv", "flac"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
+        # Limpiar estado previo
         for key in list(st.session_state.keys()):
             if key not in ['password_correct', 'password_attempted']:
                 del st.session_state[key]
-        st.session_state.audio_start_time = 0
         st.session_state.qa_history = []
-        st.session_state.brands_search = ""
         
         try:
-            with st.spinner("🔄 Procesando y optimizando archivo para máxima velocidad y precisión..."):
-                file_bytes, conversion_info = process_audio_for_transcription(uploaded_file)
-                st.info(conversion_info['message'])
+            file_bytes = uploaded_file.getvalue()
+            
+            with st.spinner("🔄 Optimizando archivo para máxima precisión..."):
+                processed_bytes, was_converted, conv_message = convert_to_optimized_mp3(file_bytes, uploaded_file.name)
+                st.info(conv_message)
 
-            st.session_state.uploaded_audio_bytes = file_bytes
-            client = Groq(api_key=api_key)
+            st.session_state.uploaded_audio_bytes = processed_bytes
             
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
-                tmp.write(file_bytes)
+                tmp.write(processed_bytes)
                 tmp_path = tmp.name
             
-            model_display = whisper_model.replace("whisper-large-v3-turbo", "whisper-large-v3-turbo (rápido)")
-            with st.spinner(f"🔄 Transcribiendo con {model_display}..."):
+            with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
                 with open(tmp_path, "rb") as audio_file:
-                    # MEJORADO: Configuración optimizada según el modelo y opciones del usuario
-                    transcription_params = {
-                        "file": (uploaded_file.name, audio_file.read()),
-                        "model": whisper_model,
-                        "language": language,
-                        "response_format": "verbose_json",
-                        "temperature": whisper_temp
-                    }
+                    # NUEVO: Prompt para guiar al modelo a ser más exacto
+                    transcription_prompt = "Esta es una transcripción de una noticia o entrevista. Transcribe el audio de manera literal, sin omitir palabras ni corregir errores gramaticales de los hablantes. Incluye todas las muletillas y pausas."
                     
-                    # Añadir prompt solo si el usuario lo activó
-                    if use_prompt and custom_prompt.strip():
-                        transcription_params["prompt"] = custom_prompt.strip()
-                    
-                    transcription = client.audio.transcriptions.create(**transcription_params)
-            
+                    transcription = client.audio.transcriptions.create(
+                        file=(uploaded_file.name, audio_file.read()), 
+                        model=model_option, 
+                        language=language,
+                        response_format="verbose_json",
+                        prompt=transcription_prompt,
+                        temperature=0.1 # MEJORADO: Ligera flexibilidad para mejorar la captura de palabras
+                    )
             os.unlink(tmp_path)
             
+            # Post-procesamiento
             transcription_text = fix_spanish_encoding(transcription.text)
             if enable_llama_postprocess:
-                with st.spinner("🤖 Mejorando transcripción con IA (con fallback automático)..."):
+                with st.spinner("🤖 Mejorando transcripción con IA..."):
                     transcription_text = post_process_with_llama(transcription_text, client)
             
             for seg in transcription.segments:
@@ -546,6 +401,7 @@ with col2:
             st.session_state.transcription = transcription_text
             st.session_state.transcription_data = transcription
             
+            # Análisis con IA
             with st.spinner("🧠 Generando análisis avanzado..."):
                 if enable_summary: 
                     st.session_state.summary = generate_summary(transcription_text, client)
@@ -558,18 +414,18 @@ with col2:
             st.balloons()
             st.rerun()
         except Exception as e:
-            st.error(f"❌ Error durante la transcripción: {e}")
-            st.info("💡 Intenta con un archivo más pequeño o en formato MP3 si el error persiste.")
+            st.error(f"❌ Error crítico durante la transcripción: {e}")
 
+# --- SECCIÓN DE RESULTADOS (Sin cambios mayores, solo ajustes de robustez) ---
 if 'transcription' in st.session_state:
     st.markdown("---")
     st.subheader("🎧 Reproduce y Analiza el Contenido")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo"]
-    if 'people' in st.session_state and st.session_state.people: 
+    if 'people' in st.session_state and st.session_state.get('people'): 
         tab_titles.append("👥 Personas Clave")
-    if 'brands' in st.session_state and st.session_state.brands: 
+    if 'brands' in st.session_state and st.session_state.get('brands'): 
         tab_titles.append("🏢 Marcas")
     tabs = st.tabs(tab_titles)
     
@@ -648,7 +504,7 @@ if 'transcription' in st.session_state:
 
                 if submit_question and user_q.strip():
                     with st.spinner("🤔 Analizando..."):
-                        ans = answer_question(user_q, st.session_state.transcription, Groq(api_key=api_key), st.session_state.qa_history)
+                        ans = answer_question(user_q, st.session_state.transcription, client, st.session_state.qa_history)
                         st.session_state.qa_history.append({'question': user_q, 'answer': ans})
                         st.rerun()
                 
@@ -659,7 +515,7 @@ if 'transcription' in st.session_state:
             st.info("📝 El resumen no fue generado. Activa la opción en el sidebar y vuelve a transcribir.")
     
     tab_idx = 2
-    if 'people' in st.session_state and st.session_state.people:
+    if 'people' in st.session_state and st.session_state.get('people'):
         with tabs[tab_idx]:
             st.markdown("### 👥 Personas y Cargos Mencionados")
             for person in st.session_state.people:
@@ -668,11 +524,10 @@ if 'transcription' in st.session_state:
                     st.markdown(f"> {person.get('context', 'N/A')}")
         tab_idx += 1
 
-    if 'brands' in st.session_state and st.session_state.brands:
+    if 'brands' in st.session_state and st.session_state.get('brands'):
         with tabs[tab_idx]:
             st.markdown("### 🏢 Marcas y Organizaciones Mencionadas")
             
-            # Búsqueda contextual para marcas
             col_brand_search1, col_brand_search2 = st.columns([4, 1])
             with col_brand_search1: 
                 brand_search_query = st.text_input("🔎 Buscar marca específica:", key="brands_search")
@@ -680,7 +535,6 @@ if 'transcription' in st.session_state:
                 st.write("")
                 st.button("🗑️ Limpiar", on_click=clear_brands_search_callback, use_container_width=True, disabled=not brand_search_query, key="clear_brands_btn")
             
-            # Filtrar marcas según búsqueda
             brands_to_show = st.session_state.brands
             if brand_search_query:
                 pattern = re.compile(re.escape(brand_search_query), re.IGNORECASE)
@@ -690,19 +544,16 @@ if 'transcription' in st.session_state:
                 else:
                     st.info("❌ No se encontraron marcas con ese nombre.")
             
-            # Mostrar marcas con búsqueda en transcripción
             for brand in brands_to_show:
                 brand_name = brand.get('name', 'N/A')
                 brand_type = brand.get('type', 'N/A')
                 
                 st.markdown(f"**🏢 {brand_name}** | **Tipo:** *{brand_type}*")
                 
-                # Expandir con contexto y timestamps
                 with st.expander("Ver contexto y menciones en audio"):
                     st.markdown(f"**Contexto identificado por IA:**")
                     st.markdown(f"> {brand.get('context', 'Sin contexto')}")
                     
-                    # Buscar en segmentos de la transcripción
                     segments = st.session_state.transcription_data.segments
                     matches = find_brand_in_segments(brand_name, segments)
                     
@@ -717,32 +568,15 @@ if 'transcription' in st.session_state:
                                 col_time, col_text = st.columns([0.15, 0.85])
                                 
                                 with col_time:
-                                    st.button(
-                                        f"▶️ {ctx_seg['time']}", 
-                                        key=f"brand_play_{brand_name}_{match_idx}_{ctx_seg['start']}", 
-                                        on_click=set_audio_time, 
-                                        args=(ctx_seg['start'],), 
-                                        use_container_width=True
-                                    )
+                                    st.button(f"▶️ {ctx_seg['time']}", key=f"brand_play_{brand_name}_{match_idx}_{ctx_seg['start']}", on_click=set_audio_time, args=(ctx_seg['start'],), use_container_width=True)
                                 
                                 with col_text:
                                     if ctx_seg['is_match']:
-                                        # Resaltar la marca en el texto
                                         pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
-                                        highlighted_text = pattern.sub(
-                                            f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', 
-                                            ctx_seg['text']
-                                        )
-                                        st.markdown(
-                                            f"<div style='{MATCH_LINE_STYLE}'>{highlighted_text}</div>", 
-                                            unsafe_allow_html=True
-                                        )
+                                        highlighted_text = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', ctx_seg['text'])
+                                        st.markdown(f"<div style='{MATCH_LINE_STYLE}'>{highlighted_text}</div>", unsafe_allow_html=True)
                                     else:
-                                        st.markdown(
-                                            f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", 
-                                            unsafe_allow_html=True
-                                        )
-                            
+                                        st.markdown(f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
                             st.markdown("---")
                     else:
                         st.info("ℹ️ No se encontraron menciones exactas en los segmentos de la transcripción.")
@@ -758,9 +592,8 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.7.0</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3/turbo | 🤖 llama-3.1-8b-instant (con fallback) | 🎵 Optimización MP3 96kbps</p>
-    <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual en marcas, conversión automática optimizada y fallback inteligente</p>
-    <p style='font-size: 0.8rem; margin-top: 0.5rem;'>Desarrollado por Johnathan Cortés</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.0.0</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 llama-3.1-8b-instant (con reintentos) | 🎵 Optimización MP3 Universal</p>
+    <p style='font-size: 0.8rem;'>Desarrollado por Johnathan Cortés</p>
 </div>
 """, unsafe_allow_html=True)
