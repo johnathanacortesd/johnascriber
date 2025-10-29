@@ -8,7 +8,6 @@ import time
 import streamlit.components.v1 as components
 from datetime import timedelta
 
-# MEJORADO: Importación de moviepy con manejo claro de su disponibilidad
 try:
     from moviepy.editor import VideoFileClip, AudioFileClip
     MOVIEPY_AVAILABLE = True
@@ -101,9 +100,10 @@ def fix_spanish_encoding(text):
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     return (result[0].upper() + result[1:] if result and result[0].islower() else result).strip()
 
-### MEJORA: Conversión de audio mucho más robusta y con mejor diagnóstico de errores.
+### MEJORA: Lógica de conversión de audio definitiva para solucionar el error 'video_fps'.
 def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
-    if not MOVIEPY_AVAILABLE: return file_bytes, False, "MoviePy no disponible."
+    if not MOVIEPY_AVAILABLE:
+        return file_bytes, False, "MoviePy no disponible."
 
     st.info(f"Iniciando optimización para '{filename}'...")
     original_size = len(file_bytes) / (1024 * 1024)
@@ -116,16 +116,24 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
     output_path = tempfile.mktemp(suffix=".mp3")
     
     try:
-        if file_ext in ['.mp4', '.mpeg', 'webm', '.avi', '.mov', '.mkv']:
-            st.info("Detectado archivo de video. Extrayendo y convirtiendo audio...")
-            with VideoFileClip(input_path) as video_clip:
-                audio = video_clip.audio
-                audio.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000)
-        else:
-            st.info("Detectado archivo de audio. Convirtiendo a formato optimizado...")
-            with AudioFileClip(input_path) as audio_clip:
-                audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000)
+        audio_clip = None
+        # Intento 1: Abrir como archivo de audio.
+        try:
+            audio_clip = AudioFileClip(input_path)
+            st.info("Archivo procesado como audio directo.")
+        except Exception:
+            st.warning("No se pudo abrir como audio, intentando como video...")
+            # Intento 2: Si falla, abrir como archivo de video y extraer el audio.
+            video_clip = VideoFileClip(input_path)
+            if video_clip.audio is None:
+                raise ValueError("El archivo de video no contiene una pista de audio.")
+            audio_clip = video_clip.audio
+            st.info("Archivo procesado como video. Extrayendo audio...")
         
+        # Escribir el archivo de audio optimizado
+        audio_clip.write_audiofile(output_path, codec='libmp3lame', bitrate=target_bitrate, fps=16000)
+        audio_clip.close()
+
         with open(output_path, 'rb') as f:
             mp3_bytes = f.read()
             
@@ -135,7 +143,6 @@ def convert_to_optimized_mp3(file_bytes, filename, target_bitrate='96k'):
         return mp3_bytes, True, msg
         
     except Exception as e:
-        # El error ahora será más específico (ej. sobre ffmpeg)
         msg = f"⚠️ Falló la optimización de audio: **{str(e)}**. Se usará el archivo original."
         return file_bytes, False, msg
         
@@ -181,32 +188,22 @@ def answer_question(question, text, client, history, model):
     messages.append({"role": "user", "content": f"Transcripción:\n---\n{text}\n---\nPregunta: {question}"})
     return robust_llama_completion(client, messages, model=model, temperature=0.2, max_tokens=2048) or "No se pudo procesar la pregunta."
 
-### MEJORA: Función única y potente para extraer todas las entidades relevantes.
 def extract_all_entities(text, client, model):
     messages = [
         {"role": "system", "content": """
 Eres un sistema de extracción de entidades (NER) de alta precisión. Analiza el texto y extrae TODAS las entidades mencionadas, clasificándolas en las siguientes categorías: 'Persona', 'Organización', 'Lugar', 'Marca', 'Cargo'.
-
 REGLAS ESTRICTAS:
 1.  **CATEGORÍAS:**
     -   **Persona:** Nombres completos de individuos (ej. "Juan Pérez", "Dra. Ana García").
-    -   **Organización:** Nombres de empresas, hospitales, universidades, instituciones gubernamentales, ONGs (ej. "Hospital General", "Universidad Nacional", "Google Inc.", "Ministerio de Salud").
+    -   **Organización:** Nombres de empresas, hospitales, universidades, instituciones (ej. "Hospital General", "Universidad Nacional", "Google").
     -   **Lugar:** Nombres de ciudades, países, regiones (ej. "Bogotá", "Colombia").
     -   **Marca:** Nombres de productos o servicios comerciales (ej. "Coca-Cola", "iPhone").
-    -   **Cargo:** Títulos o roles profesionales (ej. "presidente", "gerente", "doctor", "ministro").
+    -   **Cargo:** Títulos o roles profesionales (ej. "presidente", "gerente", "doctor", "rector").
 2.  **CONTEXTO:** Proporciona la frase exacta donde se menciona la entidad.
 3.  **FORMATO:** Responde únicamente con un objeto JSON válido con una clave "entidades" que contenga una lista de objetos.
-    Ejemplo de formato:
-    {
-      "entidades": [
-        { "name": "Dr. Carlos Rivas", "category": "Persona", "context": "El Dr. Carlos Rivas mencionó los avances." },
-        { "name": "Hospital Central", "category": "Organización", "context": "Fue atendido en el Hospital Central." },
-        { "name": "rector", "category": "Cargo", "context": "El rector de la universidad dio un discurso." }
-      ]
-    }
 4.  Si no encuentras entidades, devuelve: {"entidades": []}
 """},
-        {"role": "user", "content": f"Extrae todas las entidades del siguiente texto:\n\n{text[:8000]}"} # Aumentado a 8000 caracteres
+        {"role": "user", "content": f"Extrae todas las entidades del siguiente texto:\n\n{text[:8000]}"}
     ]
     response_json = robust_llama_completion(client, messages, model=model, temperature=0.0, max_tokens=4096, response_format={"type": "json_object"})
     try:
@@ -222,8 +219,7 @@ def get_extended_context(segments, match_index, context_range=2):
 def export_to_srt(data):
     srt_lines = []
     for i, seg in enumerate(data.segments, 1):
-        start = timedelta(seconds=seg['start'])
-        end = timedelta(seconds=seg['end'])
+        start = timedelta(seconds=seg['start']); end = timedelta(seconds=seg['end'])
         start_str = f"{start.seconds//3600:02}:{(start.seconds//60)%60:02}:{start.seconds%60:02},{start.microseconds//1000:03}"
         end_str = f"{end.seconds//3600:02}:{(end.seconds//60)%60:02}:{end.seconds%60:02},{end.microseconds//1000:03}"
         srt_lines.append(f"{i}\n{start_str} --> {end_str}\n{seg['text'].strip()}\n")
@@ -250,7 +246,6 @@ with st.sidebar:
     
     enable_llama_postprocess = st.checkbox("Corrección IA de la transcripción", value=True)
     enable_summary = st.checkbox("📝 Generar resumen ejecutivo", value=True)
-    ### MEJORA: Checkbox único para la nueva extracción de entidades.
     enable_entities = st.checkbox("📊 Extraer Entidades (Personas, Marcas, etc.)", value=True)
     
     st.markdown("---")
@@ -276,7 +271,7 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
         
         with st.spinner("🔄 Optimizando archivo..."):
             processed_bytes, was_converted, conv_message = convert_to_optimized_mp3(file_bytes, uploaded_file.name)
-            st.info(conv_message)
+            st.info(conv_message) # Muestra el mensaje de éxito o error de la conversión
         st.session_state.uploaded_audio_bytes = processed_bytes
         
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
@@ -320,14 +315,17 @@ if 'transcription' in st.session_state:
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
     tab_titles = ["📝 Transcripción", "📊 Resumen Interactivo"]
-    ### MEJORA: Se añade la nueva pestaña de Entidades si existen datos.
     if 'entities' in st.session_state and st.session_state.get('entities'):
         tab_titles.append("📊 Entidades Clave")
     tabs = st.tabs(tab_titles)
     
     # Pestaña 1: Transcripción
     with tabs[0]:
-        HIGHLIGHT_STYLE, MATCH_STYLE, CONTEXT_STYLE, BOX_STYLE = "background-color:#fca311;padding:2px 5px;border-radius:4px;font-weight:bold;", "background-color:#1e3a5f;padding:0.8rem;border-radius:6px;border-left:4px solid #fca311;", "background-color:#262730;padding:0.6rem;border-radius:4px;", "background-color:#0E1117;border:1px solid #333;border-radius:10px;padding:1.5rem;height:500px;overflow-y:auto;font-family:monospace;line-height:1.7;"
+        ### MEJORA: Estilos de CSS para fondo negro, letra blanca y mejor legibilidad.
+        HIGHLIGHT_STYLE = "background-color: #FFD700; color: black; padding: 2px 5px; border-radius: 4px; font-weight: bold;"
+        MATCH_STYLE = "background-color: #1a1a2e; padding: 0.8rem; border-radius: 6px; border-left: 4px solid #fca311;"
+        CONTEXT_STYLE = "background-color: #1f1f1f; padding: 0.6rem; border-radius: 4px;"
+        BOX_STYLE = "background-color: black; color: white; border: 1px solid #444; border-radius: 10px; padding: 1.5rem; height: 500px; overflow-y: auto; font-family: 'Consolas', 'Monaco', monospace; line-height: 1.75; font-size: 1rem;"
         
         c1, c2 = st.columns([4, 1])
         search_query = c1.text_input("🔎 Buscar en la transcripción:", key="search_input")
@@ -344,7 +342,7 @@ if 'transcription' in st.session_state:
                             ct, cc = st.columns([0.15, 0.85])
                             ct.button(f"▶️ {ctx['time']}", key=f"play_{match_idx}_{ctx['start']}", on_click=set_audio_time, args=(ctx['start'],), use_container_width=True)
                             text_html = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', ctx['text']) if ctx['is_match'] else ctx['text']
-                            cc.markdown(f"<div style='{MATCH_STYLE if ctx['is_match'] else CONTEXT_STYLE}'>{text_html}</div>", unsafe_allow_html=True)
+                            cc.markdown(f"<div style='color: white; {MATCH_STYLE if ctx['is_match'] else CONTEXT_STYLE}'>{text_html}</div>", unsafe_allow_html=True)
                         st.markdown("---")
                 else: st.info("❌ No se encontraron coincidencias.")
         
@@ -382,7 +380,6 @@ if 'transcription' in st.session_state:
             st.markdown("### 📊 Entidades Clave Identificadas")
             entities = st.session_state.entities
             
-            ### MEJORA: Filtros dinámicos para las categorías de entidades encontradas.
             categories = ["Todas"] + sorted(list(set(e.get('category', 'N/A') for e in entities)))
             
             c1, c2, c3 = st.columns([2, 2, 1])
@@ -390,7 +387,6 @@ if 'transcription' in st.session_state:
             entity_search_query = c2.text_input("Buscar entidad por nombre:", key="entity_search")
             if entity_search_query: c3.button("🗑️", on_click=clear_entity_search_callback, key="clear_entity_btn")
 
-            # Aplicar filtros
             filtered_entities = entities
             if selected_category != "Todas":
                 filtered_entities = [e for e in filtered_entities if e.get('category') == selected_category]
@@ -418,7 +414,7 @@ if 'transcription' in st.session_state:
                                     ct, cc = st.columns([0.15, 0.85])
                                     ct.button(f"▶️ {ctx['time']}", key=f"entity_play_{entity_name}_{match_idx}_{ctx['start']}", on_click=set_audio_time, args=(ctx['start'],), use_container_width=True)
                                     text_html = re.sub(f'({re.escape(entity_name)})', f'<span style="{HIGHLIGHT_STYLE}">\g<1></span>', ctx['text'], flags=re.IGNORECASE) if ctx['is_match'] else ctx['text']
-                                    cc.markdown(f"<div style='{MATCH_STYLE if ctx['is_match'] else CONTEXT_STYLE}'>{text_html}</div>", unsafe_allow_html=True)
+                                    cc.markdown(f"<div style='color: white; {MATCH_STYLE if ctx['is_match'] else CONTEXT_STYLE}'>{text_html}</div>", unsafe_allow_html=True)
                         else:
                             st.info("No se encontraron menciones exactas en los segmentos de la transcripción.")
 
@@ -432,7 +428,7 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 
 st.markdown("""
 <div style='text-align: center; color: #666; margin-top: 2rem;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v4.2.0</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión Robusta | 📊 NER Avanzado</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v4.3.0</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión Definitiva | 👁️ Legibilidad Mejorada</p>
 </div>
-""", unsafe_allow_html=True)
+""", unsafe_allow_html=True)```
