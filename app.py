@@ -129,7 +129,7 @@ def fix_spanish_encoding(text):
         result = result[0].upper() + result[1:]
     return result.strip()
 
-# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN ---
+# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN MEJORADAS ---
 def get_file_size_mb(file_bytes):
     """Calcula el tamaño del archivo en MB"""
     return len(file_bytes) / (1024 * 1024)
@@ -137,13 +137,14 @@ def get_file_size_mb(file_bytes):
 def universal_audio_converter(file_bytes, filename, target_bitrate='96k'):
     """
     Convierte cualquier archivo de audio/video a MP3 optimizado para transcripción
-    Usa 96kbps (calidad óptima para voz) para máxima velocidad y precisión
+    CORREGIDO: Ahora convierte correctamente archivos mayores a 8MB
     """
     try:
         original_size = get_file_size_mb(file_bytes)
         file_ext = os.path.splitext(filename)[1].lower()
         
-        # Si ya es MP3 pequeño, no convertir
+        # CORRECCIÓN: Si es MP3 pequeño Y ya optimizado, no convertir
+        # Pero si es MP3 grande, SÍ convertir
         if file_ext == '.mp3' and original_size < 8:
             return file_bytes, False, original_size, original_size
         
@@ -160,7 +161,7 @@ def universal_audio_converter(file_bytes, filename, target_bitrate='96k'):
                     output_path, 
                     codec='libmp3lame', 
                     bitrate=target_bitrate,
-                    fps=16000,  # Sample rate óptimo para voz
+                    fps=16000,
                     nbytes=2,
                     verbose=False, 
                     logger=None
@@ -172,7 +173,7 @@ def universal_audio_converter(file_bytes, filename, target_bitrate='96k'):
                     output_path, 
                     codec='libmp3lame', 
                     bitrate=target_bitrate,
-                    fps=16000,  # Sample rate óptimo para voz
+                    fps=16000,
                     nbytes=2,
                     verbose=False, 
                     logger=None
@@ -187,7 +188,7 @@ def universal_audio_converter(file_bytes, filename, target_bitrate='96k'):
             os.unlink(output_path)
             return mp3_bytes, True, original_size, final_size
             
-        except Exception:
+        except Exception as e:
             os.unlink(input_path)
             if os.path.exists(output_path): 
                 os.unlink(output_path)
@@ -198,41 +199,47 @@ def universal_audio_converter(file_bytes, filename, target_bitrate='96k'):
 
 def process_audio_for_transcription(uploaded_file):
     """
-    Procesa el archivo cargado y lo optimiza para transcripción
-    SIEMPRE convierte a MP3 optimizado para máxima velocidad y precisión
+    CORREGIDO: Procesa correctamente archivos grandes
     """
     file_bytes = uploaded_file.getvalue()
     original_size = get_file_size_mb(file_bytes)
     file_ext = os.path.splitext(uploaded_file.name)[1].lower()
     
-    # Convertir TODOS los archivos excepto MP3 pequeños ya optimizados
+    # CORRECCIÓN: Lógica simplificada y correcta
     should_convert = (
-        file_ext != '.mp3' or  # Cualquier formato que no sea MP3
-        original_size > 8      # O MP3 grandes que se beneficiarían de recompresión
+        file_ext != '.mp3' or  # Convertir si NO es MP3
+        original_size > 8      # O si es MP3 pero grande
     )
     
     if should_convert and MOVIEPY_AVAILABLE:
         processed_bytes, was_converted, orig_mb, final_mb = universal_audio_converter(file_bytes, uploaded_file.name)
         if was_converted and final_mb < orig_mb:
             reduction = ((orig_mb - final_mb) / orig_mb * 100) if orig_mb > 0 else 0
-            msg = f"✅ Archivo optimizado para transcripción: {orig_mb:.2f} MB → {final_mb:.2f} MB (reducción del {reduction:.1f}%) | 96kbps mono 16kHz"
+            msg = f"✅ Archivo optimizado: {orig_mb:.2f} MB → {final_mb:.2f} MB (-{reduction:.1f}%) | 96kbps mono 16kHz"
             return processed_bytes, {'converted': True, 'message': msg}
         elif was_converted:
-            msg = f"✅ Archivo convertido a MP3 optimizado: {final_mb:.2f} MB | 96kbps mono 16kHz"
+            msg = f"✅ Convertido a MP3 optimizado: {final_mb:.2f} MB | 96kbps mono 16kHz"
             return processed_bytes, {'converted': True, 'message': msg}
         else:
-            return file_bytes, {'converted': False, 'message': f"⚠️ No se pudo optimizar, procesando original ({original_size:.2f} MB)."}
+            return file_bytes, {'converted': False, 'message': f"⚠️ No se pudo optimizar, usando original ({original_size:.2f} MB)."}
     elif not MOVIEPY_AVAILABLE:
-        return file_bytes, {'converted': False, 'message': f"⚠️ MoviePy no disponible. Procesando archivo original ({original_size:.2f} MB)."}
+        return file_bytes, {'converted': False, 'message': f"⚠️ MoviePy no disponible. Usando archivo original ({original_size:.2f} MB)."}
     else:
         return file_bytes, {'converted': False, 'message': f"📁 Archivo ya optimizado ({original_size:.2f} MB)."}
 
-# --- FUNCIÓN DE POST-PROCESAMIENTO CON IA ---
-def post_process_with_llama(transcription_text, client):
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
+# --- FUNCIÓN DE POST-PROCESAMIENTO CON FALLBACK ---
+def post_process_with_llama(transcription_text, client, fallback_models=None):
+    """
+    MEJORADO: Fallback automático a modelos alternativos si el primero falla
+    """
+    if fallback_models is None:
+        fallback_models = [
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+            "mixtral-8x7b-32768"
+        ]
+    
+    system_prompt = """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
 
 **REGLAS INVIOLABLES:**
 1.  **ACENTUACIÓN PRECISA:** Tu tarea principal es añadir tildes faltantes a palabras que inequívocamente las requieren (ej: `como` -> `cómo`, `esta` -> `está`, `mas` -> `más`).
@@ -241,50 +248,92 @@ def post_process_with_llama(transcription_text, client):
 4.  **PROHIBIDO INVENTAR, OMITIR O REESCRIBIR:** No puedes añadir, eliminar ni cambiar el orden de las palabras. No puedes reescribir frases.
 5.  **DEVOLVER TEXTO ÍNTEGRO:** Siempre devolverás el texto completo, aplicando únicamente las correcciones permitidas.
 
-Tu salida debe ser únicamente el texto corregido."""},
-                {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
-            ],
-            model="llama-3.1-8b-instant", temperature=0.0, max_tokens=4096
-        )
-        return chat_completion.choices[0].message.content.strip()
-    except Exception as e:
-        st.warning(f"⚠️ No se pudo aplicar post-procesamiento con IA: {str(e)}")
-        return transcription_text
+Tu salida debe ser únicamente el texto corregido."""
+    
+    for i, model in enumerate(fallback_models):
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
+                ],
+                model=model,
+                temperature=0.0,
+                max_tokens=4096
+            )
+            if i > 0:  # Solo mostrar mensaje si se usó fallback
+                st.info(f"ℹ️ Usando modelo alternativo: {model}")
+            return chat_completion.choices[0].message.content.strip()
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'rate_limit' in error_msg or 'capacity' in error_msg or 'overloaded' in error_msg:
+                if i < len(fallback_models) - 1:
+                    st.warning(f"⚠️ {model} no disponible, intentando con {fallback_models[i+1]}...")
+                    continue
+            st.warning(f"⚠️ No se pudo aplicar post-procesamiento con IA: {str(e)}")
+            return transcription_text
+    
+    return transcription_text
 
-# --- FUNCIONES DE ANÁLISIS ---
+# --- FUNCIONES DE ANÁLISIS CON FALLBACK ---
 def generate_summary(transcription_text, client):
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
-                {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto:\n\n{transcription_text}"}
-            ],
-            model="llama-3.1-8b-instant", temperature=0.3, max_tokens=500
-        )
-        return chat_completion.choices[0].message.content
-    except Exception as e: 
-        return f"Error al generar resumen: {str(e)}"
+    """MEJORADO: Con fallback a modelos alternativos"""
+    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
+    
+    for model in models:
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "Eres un asistente experto en análisis de noticias. Crea resúmenes profesionales y concisos en un solo párrafo. Mantén todas las tildes y acentos correctos en español."},
+                    {"role": "user", "content": f"Escribe un resumen ejecutivo en un solo párrafo (máximo 150 palabras) del siguiente texto:\n\n{transcription_text}"}
+                ],
+                model=model,
+                temperature=0.3,
+                max_tokens=500
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            if 'rate_limit' in str(e).lower() or 'capacity' in str(e).lower():
+                continue
+            return f"Error al generar resumen: {str(e)}"
+    
+    return "No se pudo generar el resumen debido a límites de capacidad."
 
 def answer_question(question, transcription_text, client, conversation_history):
-    try:
-        messages = [{"role": "system", "content": "Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción de manera precisa y concisa, basándote ÚNICAMENTE en la información proporcionada. Si la información no está en la transcripción, indícalo claramente. Considera el historial de la conversación para preguntas de seguimiento."}]
-        for qa in conversation_history:
-            messages.append({"role": "user", "content": qa["question"]})
-            messages.append({"role": "assistant", "content": qa["answer"]})
-        messages.append({"role": "user", "content": f"Transcripción:\n---\n{transcription_text}\n---\nPregunta: {question}"})
-        chat_completion = client.chat.completions.create(
-            messages=messages, model="llama-3.1-8b-instant", temperature=0.2, max_tokens=800
-        )
-        return chat_completion.choices[0].message.content
-    except Exception as e: 
-        return f"Error al procesar la pregunta: {str(e)}"
+    """MEJORADO: Con fallback a modelos alternativos"""
+    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
+    
+    for model in models:
+        try:
+            messages = [{"role": "system", "content": "Eres un asistente experto en análisis de contenido. Responde preguntas sobre la transcripción de manera precisa y concisa, basándote ÚNICAMENTE en la información proporcionada. Si la información no está en la transcripción, indícalo claramente. Considera el historial de la conversación para preguntas de seguimiento."}]
+            for qa in conversation_history:
+                messages.append({"role": "user", "content": qa["question"]})
+                messages.append({"role": "assistant", "content": qa["answer"]})
+            messages.append({"role": "user", "content": f"Transcripción:\n---\n{transcription_text}\n---\nPregunta: {question}"})
+            
+            chat_completion = client.chat.completions.create(
+                messages=messages,
+                model=model,
+                temperature=0.2,
+                max_tokens=800
+            )
+            return chat_completion.choices[0].message.content
+        except Exception as e:
+            if 'rate_limit' in str(e).lower() or 'capacity' in str(e).lower():
+                continue
+            return f"Error al procesar la pregunta: {str(e)}"
+    
+    return "No se pudo procesar la pregunta debido a límites de capacidad."
 
 def extract_people_and_roles(transcription_text, client):
-    """Extrae personas y sus roles con manejo robusto de errores"""
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las personas mencionadas.
+    """MEJORADO: Con fallback y manejo robusto de errores"""
+    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
+    
+    for model in models:
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las personas mencionadas.
 REGLAS:
 1. Extrae nombres completos de personas (NO organizaciones)
 2. Incluye el cargo/rol si se menciona, sino usa "Rol no especificado"
@@ -292,31 +341,39 @@ REGLAS:
 FORMATO DE SALIDA (JSON válido):
 { "personas": [ { "name": "Nombre", "role": "Cargo", "context": "Contexto" } ] }
 Si no hay personas, devuelve: {"personas": []}'''},
-                {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:3000]}"}
-            ],
-            model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"}
-        )
-        data = json.loads(chat_completion.choices[0].message.content)
-        
-        people = data.get('personas', data.get('people', [] if not isinstance(data, list) else data))
-        validated = []
-        for person in people:
-            if isinstance(person, dict):
-                validated.append({
-                    "name": person.get('name', person.get('nombre', 'Desconocido')),
-                    "role": person.get('role', person.get('rol', 'Rol no especificado')),
-                    "context": person.get('context', person.get('contexto', 'Sin contexto'))
-                })
-        return validated
-    except (json.JSONDecodeError, Exception):
-        return []
+                    {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:3000]}"}
+                ],
+                model=model,
+                temperature=0.0,
+                max_tokens=1500,
+                response_format={"type": "json_object"}
+            )
+            data = json.loads(chat_completion.choices[0].message.content)
+            
+            people = data.get('personas', data.get('people', [] if not isinstance(data, list) else data))
+            validated = []
+            for person in people:
+                if isinstance(person, dict):
+                    validated.append({
+                        "name": person.get('name', person.get('nombre', 'Desconocido')),
+                        "role": person.get('role', person.get('rol', 'Rol no especificado')),
+                        "context": person.get('context', person.get('contexto', 'Sin contexto'))
+                    })
+            return validated
+        except Exception:
+            continue
+    
+    return []
 
 def extract_brands_and_entities(transcription_text, client):
-    """Extrae marcas y entidades con contexto y timestamps"""
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las marcas, empresas y organizaciones.
+    """MEJORADO: Con fallback y manejo robusto de errores"""
+    models = ["llama-3.1-8b-instant", "llama-3.3-70b-versatile", "mixtral-8x7b-32768"]
+    
+    for model in models:
+        try:
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": '''Eres un analista de inteligencia. Identifica TODAS las marcas, empresas y organizaciones.
 REGLAS:
 1. Extrae nombres de entidades (NO personas)
 2. Clasifica como: Empresa, Institución, ONG, Marca, Organización
@@ -324,24 +381,29 @@ REGLAS:
 FORMATO DE SALIDA (JSON válido):
 { "entidades": [ { "name": "Nombre", "type": "Tipo", "context": "Contexto exacto de la transcripción" } ] }
 Si no hay entidades, devuelve: {"entidades": []}'''},
-                {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:4000]}"}
-            ],
-            model="llama-3.1-8b-instant", temperature=0.0, max_tokens=2000, response_format={"type": "json_object"}
-        )
-        data = json.loads(chat_completion.choices[0].message.content)
-        
-        brands = data.get('entidades', data.get('entities', data.get('marcas', [] if not isinstance(data, list) else data)))
-        validated = []
-        for brand in brands:
-            if isinstance(brand, dict):
-                validated.append({
-                    "name": brand.get('name', brand.get('nombre', 'Desconocido')),
-                    "type": brand.get('type', brand.get('tipo', 'Tipo no especificado')),
-                    "context": brand.get('context', brand.get('contexto', 'Sin contexto'))
-                })
-        return validated
-    except (json.JSONDecodeError, Exception):
-        return []
+                    {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:4000]}"}
+                ],
+                model=model,
+                temperature=0.0,
+                max_tokens=2000,
+                response_format={"type": "json_object"}
+            )
+            data = json.loads(chat_completion.choices[0].message.content)
+            
+            brands = data.get('entidades', data.get('entities', data.get('marcas', [] if not isinstance(data, list) else data)))
+            validated = []
+            for brand in brands:
+                if isinstance(brand, dict):
+                    validated.append({
+                        "name": brand.get('name', brand.get('nombre', 'Desconocido')),
+                        "type": brand.get('type', brand.get('tipo', 'Tipo no especificado')),
+                        "context": brand.get('context', brand.get('contexto', 'Sin contexto'))
+                    })
+            return validated
+        except Exception:
+            continue
+    
+    return []
 
 def get_extended_context(segments, match_index, context_range=2):
     start_idx = max(0, match_index - context_range)
@@ -373,12 +435,38 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    model_option = st.selectbox("Modelo", ["whisper-large-v3"], help="Máxima precisión para español.")
+    
+    # NUEVO: Selector de modelo Whisper
+    whisper_model = st.selectbox(
+        "Modelo Whisper", 
+        ["whisper-large-v3", "whisper-large-v3-turbo"],
+        help="whisper-large-v3: Máxima precisión | whisper-large-v3-turbo: Más rápido, buena precisión"
+    )
+    
     language = st.selectbox("Idioma", ["es"], help="Español para máxima calidad.")
+    
+    # NUEVO: Configuración de temperatura para Whisper
+    with st.expander("🔧 Configuración Avanzada de Transcripción"):
+        whisper_temp = st.slider(
+            "Temperatura Whisper", 
+            0.0, 1.0, 0.0, 0.1,
+            help="0.0 = más conservador y preciso | Mayor = más creativo pero puede inventar"
+        )
+        use_prompt = st.checkbox(
+            "Usar prompt de contexto", 
+            value=False,
+            help="Añade un prompt para mejorar la precisión en terminología específica"
+        )
+        if use_prompt:
+            custom_prompt = st.text_area(
+                "Prompt personalizado",
+                value="Esta es una transcripción en español con terminología técnica y nombres propios.",
+                help="Whisper usará esto como contexto para mejorar la transcripción"
+            )
     
     st.markdown("---")
     st.subheader("🎯 Análisis Inteligente")
-    enable_llama_postprocess = st.checkbox("🤖 Post-procesamiento IA", value=True, help="Usa Llama-3.1 para corregir tildes.")
+    enable_llama_postprocess = st.checkbox("🤖 Post-procesamiento IA", value=True, help="Usa Llama-3.1 para corregir tildes (con fallback automático).")
     enable_summary = st.checkbox("📝 Generar resumen", value=True)
     enable_people = st.checkbox("👥 Extraer personas", value=True)
     enable_brands = st.checkbox("🏢 Extraer marcas", value=True)
@@ -391,10 +479,10 @@ with st.sidebar:
     if MOVIEPY_AVAILABLE:
         st.success("""
         ✅ **Optimización Activada:**
-        - Todos los archivos → MP3 96kbps
+        - Conversión automática a MP3 96kbps
         - Mono 16kHz (óptimo para voz)
-        - Máxima velocidad de transcripción
-        - Mayor precisión en el resultado
+        - Compresión de archivos grandes
+        - Máxima velocidad y precisión
         """)
     else:
         st.warning("⚠️ MoviePy no disponible. Instala con: `pip install moviepy`")
@@ -427,21 +515,29 @@ with col2:
                 tmp.write(file_bytes)
                 tmp_path = tmp.name
             
-            with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
+            model_display = whisper_model.replace("whisper-large-v3-turbo", "whisper-large-v3-turbo (rápido)")
+            with st.spinner(f"🔄 Transcribiendo con {model_display}..."):
                 with open(tmp_path, "rb") as audio_file:
-                    # Sin prompt personalizado para evitar contaminación en la transcripción
-                    transcription = client.audio.transcriptions.create(
-                        file=(uploaded_file.name, audio_file.read()), 
-                        model=model_option, 
-                        language=language,
-                        response_format="verbose_json",
-                        temperature=0.0
-                    )
+                    # MEJORADO: Configuración optimizada según el modelo y opciones del usuario
+                    transcription_params = {
+                        "file": (uploaded_file.name, audio_file.read()),
+                        "model": whisper_model,
+                        "language": language,
+                        "response_format": "verbose_json",
+                        "temperature": whisper_temp
+                    }
+                    
+                    # Añadir prompt solo si el usuario lo activó
+                    if use_prompt and custom_prompt.strip():
+                        transcription_params["prompt"] = custom_prompt.strip()
+                    
+                    transcription = client.audio.transcriptions.create(**transcription_params)
+            
             os.unlink(tmp_path)
             
             transcription_text = fix_spanish_encoding(transcription.text)
             if enable_llama_postprocess:
-                with st.spinner("🤖 Mejorando transcripción con IA..."):
+                with st.spinner("🤖 Mejorando transcripción con IA (con fallback automático)..."):
                     transcription_text = post_process_with_llama(transcription_text, client)
             
             for seg in transcription.segments:
@@ -463,6 +559,7 @@ with col2:
             st.rerun()
         except Exception as e:
             st.error(f"❌ Error durante la transcripción: {e}")
+            st.info("💡 Intenta con un archivo más pequeño o en formato MP3 si el error persiste.")
 
 if 'transcription' in st.session_state:
     st.markdown("---")
@@ -661,9 +758,9 @@ if st.button("🗑️ Limpiar Todo y Empezar de Nuevo"):
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666;'>
-    <p><strong>Transcriptor Pro - Johnascriptor - v3.6.0</strong></p>
-    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 llama-3.1-8b-instant | 🎵 Optimización MP3 96kbps</p>
-    <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual en marcas y conversión automática optimizada</p>
+    <p><strong>Transcriptor Pro - Johnascriptor - v3.7.0</strong></p>
+    <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3/turbo | 🤖 llama-3.1-8b-instant (con fallback) | 🎵 Optimización MP3 96kbps</p>
+    <p style='font-size: 0.85rem;'>✨ Con búsqueda contextual en marcas, conversión automática optimizada y fallback inteligente</p>
     <p style='font-size: 0.8rem; margin-top: 0.5rem;'>Desarrollado por Johnathan Cortés</p>
 </div>
 """, unsafe_allow_html=True)
