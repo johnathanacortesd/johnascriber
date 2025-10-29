@@ -431,4 +431,4 @@ st.markdown("""
     <p><strong>Transcriptor Pro - Johnascriptor - v4.3.0</strong></p>
     <p style='font-size: 0.9rem;'>🎙️ whisper-large-v3 | 🤖 Llama 3.1 & 3.3 | 🎵 Conversión Definitiva | 👁️ Legibilidad Mejorada</p>
 </div>
-""", unsafe_allow_html=True)```
+""", unsafe_allow_html=True)
