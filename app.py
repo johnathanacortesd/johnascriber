@@ -571,84 +571,88 @@ if 'transcription' in st.session_state:
                     st.markdown(f"> {person.get('context', 'N/A')}")
         tab_idx += 1
 
-    if 'brands' in st.session_state and st.session_state.brands:
-        with tabs[tab_idx]:
-            st.markdown("### 🏢 Marcas y Organizaciones Mencionadas")
+
+    # Reemplaza la sección de marcas (aproximadamente líneas 600-640) con esto:
+
+if 'brands' in st.session_state and st.session_state.brands:
+    with tabs[tab_idx]:
+        st.markdown("### 🏢 Marcas y Organizaciones Mencionadas")
+        
+        # Búsqueda contextual para marcas
+        col_brand_search1, col_brand_search2 = st.columns([4, 1])
+        with col_brand_search1: 
+            brand_search_query = st.text_input("🔎 Buscar marca específica:", key="brands_search")
+        with col_brand_search2: 
+            st.write("")
+            st.button("🗑️ Limpiar", on_click=clear_brands_search_callback, use_container_width=True, disabled=not brand_search_query, key="clear_brands_btn")
+        
+        # Filtrar marcas según búsqueda
+        brands_to_show = st.session_state.brands
+        if brand_search_query:
+            pattern = re.compile(re.escape(brand_search_query), re.IGNORECASE)
+            brands_to_show = [b for b in st.session_state.brands if pattern.search(b.get('name', ''))]
+            if brands_to_show:
+                st.success(f"✅ {len(brands_to_show)} marca(s) encontrada(s).")
+            else:
+                st.info("❌ No se encontraron marcas con ese nombre.")
+        
+        # Mostrar marcas con búsqueda en transcripción
+        for brand_idx, brand in enumerate(brands_to_show):  # ← AGREGADO brand_idx
+            brand_name = brand.get('name', 'N/A')
+            brand_type = brand.get('type', 'N/A')
             
-            # Búsqueda contextual para marcas
-            col_brand_search1, col_brand_search2 = st.columns([4, 1])
-            with col_brand_search1: 
-                brand_search_query = st.text_input("🔎 Buscar marca específica:", key="brands_search")
-            with col_brand_search2: 
-                st.write("")
-                st.button("🗑️ Limpiar", on_click=clear_brands_search_callback, use_container_width=True, disabled=not brand_search_query, key="clear_brands_btn")
+            st.markdown(f"**🏢 {brand_name}** | **Tipo:** *{brand_type}*")
             
-            # Filtrar marcas según búsqueda
-            brands_to_show = st.session_state.brands
-            if brand_search_query:
-                pattern = re.compile(re.escape(brand_search_query), re.IGNORECASE)
-                brands_to_show = [b for b in st.session_state.brands if pattern.search(b.get('name', ''))]
-                if brands_to_show:
-                    st.success(f"✅ {len(brands_to_show)} marca(s) encontrada(s).")
-                else:
-                    st.info("❌ No se encontraron marcas con ese nombre.")
-            
-            # Mostrar marcas con búsqueda en transcripción
-            for brand in brands_to_show:
-                brand_name = brand.get('name', 'N/A')
-                brand_type = brand.get('type', 'N/A')
+            # Expandir con contexto y timestamps
+            with st.expander("Ver contexto y menciones en audio"):
+                st.markdown(f"**Contexto identificado por IA:**")
+                st.markdown(f"> {brand.get('context', 'Sin contexto')}")
                 
-                st.markdown(f"**🏢 {brand_name}** | **Tipo:** *{brand_type}*")
+                # Buscar en segmentos de la transcripción
+                segments = st.session_state.transcription_data.segments
+                matches = find_brand_in_segments(brand_name, segments)
                 
-                # Expandir con contexto y timestamps
-                with st.expander("Ver contexto y menciones en audio"):
-                    st.markdown(f"**Contexto identificado por IA:**")
-                    st.markdown(f"> {brand.get('context', 'Sin contexto')}")
+                if matches:
+                    st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s) en la transcripción:**")
+                    st.markdown("---")
                     
-                    # Buscar en segmentos de la transcripción
-                    segments = st.session_state.transcription_data.segments
-                    matches = find_brand_in_segments(brand_name, segments)
-                    
-                    if matches:
-                        st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s) en la transcripción:**")
-                        st.markdown("---")
+                    for occurrence_idx, match_idx in enumerate(matches):  # ← AGREGADO occurrence_idx
+                        context_segments = get_extended_context(segments, match_idx, context_lines)
                         
-                        for match_idx in matches:
-                            context_segments = get_extended_context(segments, match_idx, context_lines)
+                        for ctx_idx, ctx_seg in enumerate(context_segments):  # ← AGREGADO ctx_idx
+                            col_time, col_text = st.columns([0.15, 0.85])
                             
-                            for ctx_seg in context_segments:
-                                col_time, col_text = st.columns([0.15, 0.85])
-                                
-                                with col_time:
-                                    st.button(
-                                        f"▶️ {ctx_seg['time']}", 
-                                        key=f"brand_play_{brand_name}_{match_idx}_{ctx_seg['start']}", 
-                                        on_click=set_audio_time, 
-                                        args=(ctx_seg['start'],), 
-                                        use_container_width=True
+                            with col_time:
+                                # ↓ CLAVE ÚNICA: brand_idx + occurrence_idx + ctx_idx
+                                st.button(
+                                    f"▶️ {ctx_seg['time']}", 
+                                    key=f"brand_play_{brand_idx}_{occurrence_idx}_{ctx_idx}_{ctx_seg['start']}", 
+                                    on_click=set_audio_time, 
+                                    args=(ctx_seg['start'],), 
+                                    use_container_width=True
+                                )
+                            
+                            with col_text:
+                                if ctx_seg['is_match']:
+                                    # Resaltar la marca en el texto
+                                    pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
+                                    highlighted_text = pattern.sub(
+                                        f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', 
+                                        ctx_seg['text']
                                     )
-                                
-                                with col_text:
-                                    if ctx_seg['is_match']:
-                                        # Resaltar la marca en el texto
-                                        pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
-                                        highlighted_text = pattern.sub(
-                                            f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', 
-                                            ctx_seg['text']
-                                        )
-                                        st.markdown(
-                                            f"<div style='{MATCH_LINE_STYLE}'>{highlighted_text}</div>", 
-                                            unsafe_allow_html=True
-                                        )
-                                    else:
-                                        st.markdown(
-                                            f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", 
-                                            unsafe_allow_html=True
-                                        )
-                            
-                            st.markdown("---")
-                    else:
-                        st.info("ℹ️ No se encontraron menciones exactas en los segmentos de la transcripción.")
+                                    st.markdown(
+                                        f"<div style='{MATCH_LINE_STYLE}'>{highlighted_text}</div>", 
+                                        unsafe_allow_html=True
+                                    )
+                                else:
+                                    st.markdown(
+                                        f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", 
+                                        unsafe_allow_html=True
+                                    )
+                        
+                        st.markdown("---")
+                else:
+                    st.info("ℹ️ No se encontraron menciones exactas en los segmentos de la transcripción.")
 
 # --- Pie de página y Limpieza ---
 st.markdown("---")
