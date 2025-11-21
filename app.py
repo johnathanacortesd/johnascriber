@@ -4,31 +4,35 @@ import tempfile
 import os
 import json
 import re
-import streamlit.components.v1 as components
+import subprocess # <--- Importante para la corrección
 from datetime import timedelta
 
-# --- DEPENDENCIAS DE AUDIO ---
-# Asegúrate de tener ffmpeg instalado en el sistema.
-# En Streamlit Cloud, crea un archivo packages.txt y añade: ffmpeg
+# --- CONFIGURACIÓN DE PÁGINA ---
+st.set_page_config(page_title="Transcriptor Pro V5", page_icon="🎙️", layout="wide")
+
+# --- CSS PERSONALIZADO ---
+st.markdown("""
+    <style>
+    .stAlert { margin-top: 1rem; }
+    .success-box { padding: 1rem; background-color: #d4edda; color: #155724; border-radius: 0.5rem; border: 1px solid #c3e6cb; }
+    </style>
+""", unsafe_allow_html=True)
+
+# --- GESTIÓN DE SECRETOS ---
 try:
-    from moviepy.editor import AudioFileClip
-    MOVIEPY_AVAILABLE = True
-except ImportError:
-    MOVIEPY_AVAILABLE = False
+    api_key = st.secrets["GROQ_API_KEY"]
+except KeyError:
+    st.error("❌ Falta GROQ_API_KEY en los secrets de Streamlit.")
+    st.stop()
 
-# --- CONFIGURACIÓN INICIAL ---
-st.set_page_config(page_title="Transcriptor Pro V4", page_icon="🎙️", layout="wide")
-
+# --- AUTENTICACIÓN ---
 if "password_correct" not in st.session_state:
     st.session_state.password_correct = False
 
-# --- AUTENTICACIÓN ---
 def validate_password():
     if st.session_state.get("password") == st.secrets.get("PASSWORD"):
         st.session_state.password_correct = True
         del st.session_state["password"]
-    else:
-        st.session_state.password_correct = False
 
 if not st.session_state.password_correct:
     st.markdown("<h1 style='text-align: center;'>🎙️ Transcriptor Pro</h1>", unsafe_allow_html=True)
@@ -37,71 +41,86 @@ if not st.session_state.password_correct:
         st.text_input("🔐 Contraseña", type="password", on_change=validate_password, key="password")
     st.stop()
 
-# --- UTILS Y ESTADO ---
-if 'qa_history' not in st.session_state: st.session_state.qa_history = []
-
-try:
-    api_key = st.secrets["GROQ_API_KEY"]
-except KeyError:
-    st.error("❌ Falta GROQ_API_KEY en secrets.")
-    st.stop()
-
-# --- 1. MOTOR DE AUDIO OPTIMIZADO (LA CLAVE DEL TAMAÑO) ---
-def optimize_audio(file_bytes, file_name):
+# --- 1. MOTOR DE AUDIO ROBUSTO (SUBPROCESS + FFMPEG) ---
+def optimize_audio_robust(file_bytes, file_ext):
     """
-    Convierte CUALQUIER audio a MP3, Mono, 16kHz, 32kbps.
-    Esto reduce el tamaño drásticamente sin perder calidad para Whisper.
+    Intenta comprimir usando llamada directa al sistema (FFmpeg) para evitar
+    errores de decodificación de Python/MoviePy.
+    Configuración: MP3 Mono 16kHz 32kbps.
     """
-    if not MOVIEPY_AVAILABLE:
-        return file_bytes, "⚠️ MoviePy no instalado. Usando original."
+    # Usamos nombres genéricos para evitar errores de encoding con caracteres raros en nombres de archivo
+    safe_ext = file_ext if file_ext else ".mp3"
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=safe_ext) as input_tmp:
+        input_path = input_tmp.name
+        input_tmp.write(file_bytes)
+    
+    output_path = input_path + "_opt.mp3"
+    
+    conversion_success = False
+    final_bytes = file_bytes
+    log_msg = ""
 
     try:
-        # Guardar archivo original temporalmente
-        ext = os.path.splitext(file_name)[1]
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp_in:
-            tmp_in.write(file_bytes)
-            input_path = tmp_in.name
+        # INTENTO 1: Subprocess directo (Más estable en Linux/Cloud)
+        # -y: sobrescribir | -vn: quitar video | -ar 16000: frecuencia Whisper
+        # -ac 1: Mono | -b:a 32k: Bitrate bajo peso
+        command = [
+            "ffmpeg", "-y",
+            "-i", input_path,
+            "-vn",
+            "-ar", "16000",
+            "-ac", "1", 
+            "-b:a", "32k",
+            "-f", "mp3",
+            output_path
+        ]
+        
+        # Ejecutamos silenciando la salida para evitar el error 'utf-8 codec can't decode'
+        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            with open(output_path, "rb") as f:
+                final_bytes = f.read()
+            conversion_success = True
+            log_msg = "✅ FFmpeg Nativo"
+            
+    except Exception as e_ffmpeg:
+        # INTENTO 2: MoviePy (Solo si falla el nativo)
+        try:
+            from moviepy.editor import AudioFileClip
+            clip = AudioFileClip(input_path)
+            clip.write_audiofile(
+                output_path, fps=16000, nbytes=2, codec='libmp3lame', 
+                bitrate='32k', ffmpeg_params=["-ac", "1"], 
+                verbose=False, logger=None 
+            )
+            clip.close()
+            with open(output_path, "rb") as f:
+                final_bytes = f.read()
+            conversion_success = True
+            log_msg = "✅ MoviePy (Fallback)"
+        except Exception as e_moviepy:
+            log_msg = f"⚠️ Falló optimización: {str(e_ffmpeg)} | {str(e_moviepy)}"
+            conversion_success = False
 
-        output_path = input_path + "_opt.mp3"
-
-        # Conversión con MoviePy
-        # codec='libmp3lame' es estándar. bitrate='32k' es suficiente para voz.
-        # fps=16000 es la frecuencia nativa de Whisper (evita resampleo en el servidor).
-        audio_clip = AudioFileClip(input_path)
-        audio_clip.write_audiofile(
-            output_path,
-            codec='libmp3lame',
-            bitrate='32k', 
-            fps=16000,
-            nbytes=2,
-            ffmpeg_params=["-ac", "1"], # Forzar MONO (1 canal) reduce el tamaño al 50%
-            verbose=False,
-            logger=None
-        )
-        audio_clip.close()
-
-        # Leer resultado
-        with open(output_path, 'rb') as f:
-            optimized_bytes = f.read()
-
-        # Calcular ahorro
-        orig_size = len(file_bytes) / (1024*1024)
-        new_size = len(optimized_bytes) / (1024*1024)
-        reduction = (1 - (new_size / orig_size)) * 100
-
-        # Limpieza
-        os.unlink(input_path)
-        os.unlink(output_path)
-
-        return optimized_bytes, f"✅ Audio comprimido: {orig_size:.2f}MB ➝ {new_size:.2f}MB (Reducción: {reduction:.0f}%)"
-
-    except Exception as e:
+    # Limpieza
+    try:
         if os.path.exists(input_path): os.unlink(input_path)
-        return file_bytes, f"⚠️ Error optimizando audio: {str(e)}. Usando original."
+        if os.path.exists(output_path): os.unlink(output_path)
+    except: pass
 
-# --- 2. LIMPIEZA DE CODIFICACIÓN (MOJIBAKE) ---
+    # Cálculo de reducción
+    if conversion_success:
+        orig_mb = len(file_bytes) / (1024*1024)
+        new_mb = len(final_bytes) / (1024*1024)
+        reduction = (1 - (new_mb / orig_mb)) * 100 if orig_mb > 0 else 0
+        return final_bytes, f"{log_msg}: {orig_mb:.1f}MB ➝ {new_mb:.1f}MB (-{reduction:.0f}%)"
+    else:
+        return file_bytes, log_msg
+
+# --- 2. UTILIDADES DE TEXTO ---
 def fix_encoding(text):
-    """Arregla caracteres rotos comunes en conversiones UTF-8/Latin-1"""
     if not text: return ""
     replacements = {
         'Ã¡': 'á', 'Ã©': 'é', 'Ãed': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 'Ã±': 'ñ',
@@ -112,161 +131,110 @@ def fix_encoding(text):
         text = text.replace(bad, good)
     return text
 
-# --- 3. PROCESAMIENTO INTELIGENTE POR TROZOS (LA CLAVE DE LA CALIDAD) ---
-def text_chunker(text, chunk_size=3000):
-    """Divide el texto en trozos respetando los puntos para no cortar frases."""
+def text_chunker(text, chunk_size=2500):
+    """Corta texto por oraciones para no romper contexto."""
     chunks = []
     current_chunk = ""
     sentences = re.split(r'(?<=[.?!])\s+', text)
-    
     for sentence in sentences:
         if len(current_chunk) + len(sentence) < chunk_size:
             current_chunk += sentence + " "
         else:
             chunks.append(current_chunk.strip())
             current_chunk = sentence + " "
-    if current_chunk:
-        chunks.append(current_chunk.strip())
+    if current_chunk: chunks.append(current_chunk.strip())
     return chunks
 
 def clean_transcription_with_ai(full_text, client):
-    """
-    Limpia la transcripción por partes para evitar que la IA resuma o alucine.
-    """
     chunks = text_chunker(full_text)
     cleaned_chunks = []
     
-    progress_bar = st.progress(0)
-    total_chunks = len(chunks)
-
-    system_prompt = """Eres un editor de texto experto en español. 
-TU TAREA: Corregir ortografía, acentuación (tildes) y puntuación del siguiente texto transcrito.
-REGLAS CRÍTICAS:
-1. NO resumas. El texto de salida debe tener aproximadamente la misma longitud que la entrada.
-2. NO elimines palabras repetidas si dan contexto (titubeos leves se pueden quitar, pero no frases enteras).
-3. Asegura el uso correcto de tildes en: pretéritos (llegó vs llego), interrogativos (qué, cómo), y palabras comunes (administración, público).
-4. Devuelve SOLO el texto corregido, sin introducciones."""
-
+    progress_text = "🧠 IA corrigiendo ortografía y puntuación..."
+    my_bar = st.progress(0, text=progress_text)
+    
+    system_prompt = """Eres un editor experto. TU TAREA: Corregir ortografía, tildes y puntuación.
+    REGLAS: 1. NO resumas. 2. Mantén el texto completo. 3. Arregla tildes en: pretéritos, interrogativos y palabras clave."""
+    
     for i, chunk in enumerate(chunks):
         try:
-            response = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Texto a corregir:\n\n{chunk}"}
-                ],
-                model="llama-3.1-8b-instant",
-                temperature=0.1, # Bajo para ser fiel al texto
-                max_tokens=len(chunk) + 500 # Espacio suficiente
+            resp = client.chat.completions.create(
+                messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": chunk}],
+                model="llama-3.1-8b-instant", temperature=0.1
             )
-            corrected = response.choices[0].message.content.strip()
-            cleaned_chunks.append(corrected)
-        except Exception as e:
-            cleaned_chunks.append(chunk) # Si falla, usa el original
-        
-        progress_bar.progress((i + 1) / total_chunks)
+            cleaned_chunks.append(resp.choices[0].message.content.strip())
+        except:
+            cleaned_chunks.append(chunk)
+        my_bar.progress((i + 1) / len(chunks), text=f"{progress_text} ({i+1}/{len(chunks)})")
     
-    progress_bar.empty()
+    my_bar.empty()
     return " ".join(cleaned_chunks)
 
-# --- INTERFAZ PRINCIPAL ---
-st.title("🎙️ Transcriptor Pro V4 - Optimizado")
+# --- INTERFAZ ---
+st.title("🎙️ Transcriptor Pro V5 - Robustez Total")
+st.info("✅ Versión actualizada: Manejo nativo de FFmpeg para evitar errores de codificación.")
 
-with st.sidebar:
-    st.header("Configuración")
-    model = st.selectbox("Modelo", ["whisper-large-v3"], disabled=True)
-    enable_ai_clean = st.checkbox("✨ Limpieza IA (Tildes/Puntuación)", value=True, help="Usa Llama para corregir ortografía sin cortar el texto.")
-    st.info("💡 Ahora el sistema convierte todo a MP3 32kbps antes de enviar. Transcripciones más rápidas y sin errores de tamaño.")
+uploaded_file = st.file_uploader("Archivo multimedia", type=["mp3", "mp4", "m4a", "wav", "mpeg", "ogg", "webm"])
 
-uploaded_file = st.file_uploader("Arrastra tu audio/video aquí", type=["mp3", "mp4", "m4a", "wav", "mpeg", "ogg"])
-
-if uploaded_file and st.button("🚀 Transcribir", type="primary", use_container_width=True):
+if uploaded_file and st.button("🚀 Iniciar Proceso", type="primary", use_container_width=True):
     client = Groq(api_key=api_key)
-    st.session_state.qa_history = []
     
-    # 1. Optimización
-    with st.spinner("🛠️ Comprimiendo y convirtiendo a MP3 Mono..."):
-        file_bytes = uploaded_file.getvalue()
-        optimized_bytes, msg = optimize_audio(file_bytes, uploaded_file.name)
-        st.success(msg)
-    
-    # 2. Transcripción
-    with st.spinner("📝 Transcribiendo con Whisper V3..."):
-        # Guardar bytes optimizados a temp
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
-            tmp_audio.write(optimized_bytes)
-            tmp_audio_path = tmp_audio.name
+    # 1. OPTIMIZACIÓN
+    with st.spinner("🔨 Comprimiendo audio (FFmpeg)..."):
+        file_ext = os.path.splitext(uploaded_file.name)[1]
+        audio_bytes, msg = optimize_audio_robust(uploaded_file.getvalue(), file_ext)
         
-        with open(tmp_audio_path, "rb") as f:
-            # PROMPT DE CONTEXTO: Esto mejora drásticamente las tildes iniciales
-            prompt_context = "Transcripción en español latinoamericano. Uso correcto de tildes, signos de puntuación y gramática. Palabras clave: administración, qué, cómo, cuándo, público, político, comunicación."
+        if "⚠️" in msg:
+            st.warning(msg)
+            st.error("⚠️ La optimización falló. Se intentará usar el archivo original, pero si es >25MB fallará.")
+        else:
+            st.success(msg)
+
+    # 2. TRANSCRIPCIÓN
+    with st.spinner("✍️ Transcribiendo..."):
+        try:
+            # Guardar el audio (ya sea optimizado u original)
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_audio:
+                tmp_audio.write(audio_bytes)
+                tmp_audio_path = tmp_audio.name
             
-            transcription = client.audio.transcriptions.create(
-                file=("audio.mp3", f.read()),
-                model="whisper-large-v3",
-                language="es",
-                response_format="verbose_json",
-                temperature=0.0,
-                prompt=prompt_context # <--- CLAVE PARA LA CALIDAD
-            )
-        os.unlink(tmp_audio_path)
-        
-        raw_text = fix_encoding(transcription.text)
-        
-    # 3. Post-procesamiento
+            with open(tmp_audio_path, "rb") as f:
+                transcription = client.audio.transcriptions.create(
+                    file=("audio.mp3", f.read()), # Nombre genérico forzado
+                    model="whisper-large-v3",
+                    language="es",
+                    response_format="verbose_json",
+                    temperature=0.0,
+                    prompt="Transcripción en español. Ortografía perfecta, tildes en: qué, cómo, cuándo, pasó, miró, público."
+                )
+            os.unlink(tmp_audio_path)
+            
+            raw_text = fix_encoding(transcription.text)
+            st.session_state.segments = transcription.segments
+            
+        except Exception as e:
+            st.error(f"❌ Error en API Groq: {str(e)}")
+            if "413" in str(e):
+                st.error("📉 El archivo es demasiado grande incluso después de intentar comprimirlo.")
+            st.stop()
+
+    # 3. LIMPIEZA IA
     final_text = raw_text
-    if enable_ai_clean:
-        with st.spinner("🧠 IA Revisando ortografía bloque a bloque..."):
-            final_text = clean_transcription_with_ai(raw_text, client)
-            
+    if st.checkbox("✨ Limpieza extra con IA", value=True):
+        final_text = clean_transcription_with_ai(raw_text, client)
+    
     st.session_state.transcription = final_text
-    st.session_state.segments = transcription.segments # Guardamos segmentos originales para tiempos
     st.rerun()
 
-# --- RESULTADOS ---
+# --- VISUALIZACIÓN ---
 if 'transcription' in st.session_state:
     st.markdown("---")
+    st.subheader("📄 Resultado Final")
+    st.text_area("", st.session_state.transcription, height=400)
     
-    # Tabs para organizar
-    tab1, tab2 = st.tabs(["📄 Texto Completo", "⏱️ Por Segmentos"])
-    
-    with tab1:
-        st.subheader("Transcripción Final")
-        st.text_area("Resultado:", value=st.session_state.transcription, height=400)
-        
-        st.download_button(
-            "💾 Descargar TXT", 
-            st.session_state.transcription, 
-            file_name="transcripcion.txt",
-            mime="text/plain"
-        )
-        
-    with tab2:
-        st.subheader("Segmentos con Tiempo")
-        # Mostrar segmentos originales (útil para buscar)
-        # Nota: La limpieza IA se hace al texto completo, los segmentos mantienen el texto original de Whisper
-        # pero les aplicamos el fix_encoding básico.
-        srt_text = ""
-        for seg in st.session_state.segments:
-            start = str(timedelta(seconds=int(seg['start'])))
-            text = fix_encoding(seg['text'])
-            st.markdown(f"**[{start}]** {text}")
-            srt_text += f"[{start}] {text}\n"
-            
-        st.download_button("💾 Descargar con Tiempos", srt_text, "tiempos.txt")
-
-    st.markdown("---")
-    st.header("🤖 Chat con la Transcripción")
-    
-    # Chat simple
-    user_q = st.text_input("Pregunta algo sobre el audio:")
-    if user_q:
-        with st.spinner("Analizando..."):
-            client = Groq(api_key=api_key)
-            completion = client.chat.completions.create(
-                messages=[
-                    {"role": "system", "content": "Responde basándote solo en el texto proporcionado."},
-                    {"role": "user", "content": f"Texto: {st.session_state.transcription[:15000]}\n\nPregunta: {user_q}"}
-                ],
-                model="llama-3.1-8b-instant"
-            )
-            st.write(completion.choices[0].message.content)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.download_button("📥 Descargar Texto", st.session_state.transcription, "transcripcion.txt")
+    with c2:
+        if 'segments' in st.session_state:
+            srt = "\n".join([f"[{timedelta(seconds=int(s['start']))}] {fix_encoding(s['text'])}" for s in st.session_state.segments])
+            st.download_button("⏱️ Descargar con Tiempos", srt, "tiempos.txt")
