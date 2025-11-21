@@ -119,59 +119,67 @@ def text_chunker_smart(text, chunk_size=3000):
     return chunks
 
 def post_process_conservative(transcription_text, client):
-    """Post-procesamiento CONSERVADOR - Solo corrige ortografía obvia, NO inventa"""
+    """Post-procesamiento ULTRA CONSERVADOR - Solo agrega tildes faltantes"""
     chunks = text_chunker_smart(transcription_text)
     cleaned_chunks = []
     
-    progress_text = "🧠 Corrección ortográfica conservadora..."
+    progress_text = "🧠 Corrección de tildes..."
     my_bar = st.progress(0, text=progress_text)
     total_chunks = len(chunks)
 
-    # PROMPT MEJORADO - Más específico y conservador
-    system_prompt = """Eres un corrector ortográfico CONSERVADOR del español.
+    # PROMPT ULTRA ESPECÍFICO - SOLO TILDES
+    system_prompt = """Eres un corrector de tildes en español. Tu ÚNICA tarea es agregar tildes faltantes.
 
-REGLAS ESTRICTAS:
-1. SOLO corrige: tildes faltantes, mayúsculas después de punto, comas faltantes evidentes
-2. NO cambies palabras técnicas (telefonía, tecnología, administración, etc.)
-3. NO resumas ni parafrasees
-4. NO corrijas palabras que ya están correctas
-5. Si una palabra puede tener tilde o no (ej: "publico" vs "público"), usa el contexto
-6. Mantén EXACTAMENTE el mismo contenido y longitud
-7. Devuelve SOLO el texto corregido, sin explicaciones
+REGLAS ABSOLUTAS:
+1. SOLO agrega tildes donde falten (á, é, í, ó, ú, ñ)
+2. NO cambies ninguna palabra por otra (telefonía ≠ teléfono)
+3. NO cambies tiempos verbales
+4. NO resumas ni acortes
+5. NO cambies números ni fechas
+6. NO agregues ni quites palabras
+7. Si una palabra YA tiene tilde, NO la toques
+8. Devuelve el texto IDÉNTICO, solo con tildes corregidas
 
-Ejemplos de lo que SÍ debes hacer:
-- "como estas" → "¿Cómo estás?"
-- "administracion publica" → "administración pública"
-- "telefonia movil" → "telefonía móvil"
+Palabras que NO debes cambiar NUNCA:
+- telefonía → telefonía (ya correcta)
+- tecnología → tecnología (ya correcta) 
+- administración → administración (ya correcta)
+- público → público (ya correcta)
 
-Ejemplos de lo que NO debes hacer:
-- "telefonía" NO cambiar a "teléfono"
-- "público" NO cambiar si el contexto indica otra cosa
-- NO acortar ni resumir el texto"""
+SOLO corrige si falta la tilde:
+- "telefonia" → "telefonía"
+- "administracion" → "administración"
+- "como estas" → "cómo estás"
+
+RESPONDE SOLO CON EL TEXTO, SIN EXPLICACIONES."""
 
     for i, chunk in enumerate(chunks):
         try:
             response = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Texto a corregir (mantén exactamente el mismo contenido):\n\n{chunk}"}
+                    {"role": "user", "content": chunk}
                 ],
                 model="llama-3.1-8b-instant", 
-                temperature=0.05,  # MÁS BAJO = más conservador
-                max_tokens=len(chunk) + 800  # Más margen
+                temperature=0.0,  # CERO para máxima exactitud
+                max_tokens=len(chunk) + 1000
             )
             corrected = response.choices[0].message.content.strip()
             
-            # VALIDACIÓN: Si el texto cambió dramáticamente, usar original
-            length_diff = abs(len(corrected) - len(chunk)) / len(chunk)
-            if length_diff > 0.15:  # Si cambió más del 15%, algo salió mal
-                st.warning(f"⚠️ Chunk {i+1}: Cambio excesivo detectado, usando original")
+            # VALIDACIÓN MÁS ESTRICTA
+            word_count_original = len(chunk.split())
+            word_count_corrected = len(corrected.split())
+            word_diff = abs(word_count_original - word_count_corrected)
+            
+            # Si cambió cantidad de palabras o más del 10% del largo, rechazar
+            if word_diff > 2 or abs(len(corrected) - len(chunk)) / len(chunk) > 0.1:
+                st.warning(f"⚠️ Chunk {i+1}: Cambios detectados, usando original")
                 cleaned_chunks.append(chunk)
             else:
                 cleaned_chunks.append(corrected)
                 
         except Exception as e:
-            st.warning(f"⚠️ Error en chunk {i+1}: {e}, usando original")
+            st.warning(f"⚠️ Error en chunk {i+1}: usando original")
             cleaned_chunks.append(chunk)
         
         my_bar.progress((i + 1) / total_chunks, text=f"{progress_text} ({i+1}/{total_chunks})")
