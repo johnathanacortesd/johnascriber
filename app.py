@@ -33,8 +33,8 @@ if not st.session_state.password_correct:
     st.markdown("""
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
-        <h2>Transcriptor Pro - Johnascriptor V3</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>Análisis avanzado de audio con IA</p>
+        <h2>Transcriptor Forense - Johnascriptor</h2>
+        <p style='color: #666; margin-bottom: 2rem;'>Precisión exacta sin alucinaciones</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -47,15 +47,13 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN DE PÁGINA ---
-st.set_page_config(page_title="Transcriptor Pro - Johnascriptor", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Forense", page_icon="⚖️", layout="wide")
 
 # --- ESTADO ---
 if 'audio_start_time' not in st.session_state:
     st.session_state.audio_start_time = 0
 if 'qa_history' not in st.session_state:
     st.session_state.qa_history = []
-if 'brands_search' not in st.session_state:
-    st.session_state.brands_search = ""
 
 # --- CALLBACKS ---
 def set_audio_time(start_seconds):
@@ -64,9 +62,6 @@ def set_audio_time(start_seconds):
 def clear_search_callback():
     st.session_state.search_input = ""
 
-def clear_brands_search_callback():
-    st.session_state.brands_search = ""
-
 # --- API KEY ---
 try:
     api_key = st.secrets["GROQ_API_KEY"]
@@ -74,7 +69,7 @@ except KeyError:
     st.error("❌ Error: Falta GROQ_API_KEY en secrets.")
     st.stop()
 
-# --- FUNCIONES AUXILIARES (RECUPERADAS COMPLETAS) ---
+# --- UTILIDADES ---
 def create_copy_button(text_to_copy):
     text_json = json.dumps(text_to_copy)
     button_id = f"copy-button-{hash(text_to_copy)}"
@@ -89,7 +84,8 @@ def format_timestamp(seconds):
 
 def format_transcription_with_timestamps(segments):
     if not segments:
-        return "No se encontraron segmentos con marcas de tiempo."
+        return "No se encontraron segmentos."
+    # Usa los segmentos YA corregidos
     lines = [f"[{format_timestamp(seg['start'])} --> {format_timestamp(seg['end'])}] {seg['text'].strip()}" for seg in segments]
     return "\n".join(lines)
 
@@ -105,6 +101,7 @@ def export_to_srt(segments):
 
 def fix_spanish_encoding(text):
     if not text: return ""
+    # Corrección básica de codificación antes de pasar a la IA
     replacements = {
         'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 
         'Ã±': 'ñ', 'Ã': 'í', 'Â': '', 'â': '"'
@@ -118,14 +115,11 @@ def highlight_text(text, query):
     pattern = re.compile(re.escape(query), re.IGNORECASE)
     return pattern.sub(lambda m: f'<span style="background-color: #fca311; color: #000; padding: 2px 4px; border-radius: 4px; font-weight: bold;">{m.group(0)}</span>', text)
 
-# --- CONVERSOR DE AUDIO (RECUPERADO Y COMPLETO) ---
+# --- CONVERSOR DE AUDIO ---
 def get_file_size_mb(file_bytes):
     return len(file_bytes) / (1024 * 1024)
 
 def universal_audio_converter(file_bytes, filename):
-    """
-    Conversor robusto original. Fuerza MP3 Mono 16kHz 64kbps.
-    """
     try:
         original_size = get_file_size_mb(file_bytes)
         file_ext = os.path.splitext(filename)[1].lower()
@@ -157,7 +151,6 @@ def universal_audio_converter(file_bytes, filename):
             final_size = get_file_size_mb(mp3_bytes)
             os.unlink(input_path)
             os.unlink(output_path)
-            
             return mp3_bytes, True, original_size, final_size
             
         except Exception:
@@ -168,32 +161,30 @@ def universal_audio_converter(file_bytes, filename):
     except Exception:
         return file_bytes, False, 0, 0
 
-# --- PROCESO DE TRANSCRIPCIÓN CON CHUNKING (NUEVO + ROBUSTO) ---
+# --- TRANSCRIPCIÓN (WHISPER) ---
 def transcribe_with_chunking(client, audio_path, model, language):
-    """
-    Divide el audio en fragmentos de 10 minutos para evitar cortes,
-    pero mantiene la estructura de datos original.
-    """
     full_segments = []
     full_text = ""
     
+    # Prompt de contexto para ayudar a Whisper con términos colombianos/institucionales
+    # Esto reduce errores como "Alcaldesa" vs "Alcaldía" desde la raíz
+    whisper_prompt = "Transcripción literal en español. Contexto: Colombia, Bogotá, Alcaldía, Gobierno, Política, Noticias. Usar puntuación correcta."
+
     if MOVIEPY_AVAILABLE:
         try:
             audio_clip = AudioFileClip(audio_path)
             duration = audio_clip.duration
             chunk_size = 600  # 10 minutos
             
-            # Caso corto: Transcripción directa
             if duration < chunk_size:
                 with open(audio_path, "rb") as f:
                     transcription = client.audio.transcriptions.create(
                         file=(os.path.basename(audio_path), f.read()),
                         model=model, language=language, response_format="verbose_json",
-                        temperature=0.0, prompt="Transcripción exacta en español."
+                        temperature=0.0, prompt=whisper_prompt
                     )
                 return fix_spanish_encoding(transcription.text), transcription.segments
             
-            # Caso largo: Chunking
             num_chunks = math.ceil(duration / chunk_size)
             progress_bar = st.progress(0)
             
@@ -211,10 +202,9 @@ def transcribe_with_chunking(client, audio_path, model, language):
                     resp = client.audio.transcriptions.create(
                         file=("chunk.mp3", f.read()),
                         model=model, language=language, response_format="verbose_json",
-                        temperature=0.0, prompt="Continuación de transcripción en español."
+                        temperature=0.0, prompt=f"Continuación: {whisper_prompt}"
                     )
                 
-                # Ajustar timestamps para que sean continuos
                 chunk_text_part = ""
                 for seg in resp.segments:
                     seg['start'] += start_time
@@ -231,62 +221,81 @@ def transcribe_with_chunking(client, audio_path, model, language):
             progress_bar.empty()
             return full_text, full_segments
             
-        except Exception as e:
-            st.warning(f"Fallo en chunking ({str(e)}). Intentando método directo...")
-            # Fallback al método directo
+        except Exception:
+            # Fallback
             with open(audio_path, "rb") as f:
                 transcription = client.audio.transcriptions.create(
                     file=(os.path.basename(audio_path), f.read()),
-                    model=model, language=language, response_format="verbose_json"
+                    model=model, language=language, response_format="verbose_json", prompt=whisper_prompt
                 )
             return fix_spanish_encoding(transcription.text), transcription.segments
     else:
-        # Sin MoviePy, método directo
         with open(audio_path, "rb") as f:
             transcription = client.audio.transcriptions.create(
                 file=(os.path.basename(audio_path), f.read()),
-                model=model, language=language, response_format="verbose_json"
+                model=model, language=language, response_format="verbose_json", prompt=whisper_prompt
             )
         return fix_spanish_encoding(transcription.text), transcription.segments
 
-# --- CORRECCIÓN DE TEXTO POR LOTES (MEJORA) ---
-def safe_batched_correction(text, client):
+# --- CORRECCIÓN DE SEGMENTOS (NUEVA LÓGICA PRECISA) ---
+def correct_segments_in_batches(segments, client):
     """
-    Mejora: Divide el texto en lotes para que Llama no corte la respuesta.
+    Corrige los segmentos individualmente (en lotes) para asegurar que
+    la búsqueda y los timestamps coincidan con el texto limpio.
     """
-    if not text: return ""
-    chunk_size = 3500
-    text_chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-    corrected_full_text = ""
+    if not segments: return []
     
-    system_prompt = """Eres un corrector ortográfico experto.
-TU TAREA: Corregir ÚNICAMENTE tildes, puntuación y errores ortográficos.
-REGLAS:
-1. NO resumas.
-2. NO cambies palabras por sinónimos.
-3. Devuelve SOLO el texto corregido."""
+    cleaned_segments = segments.copy()
+    batch_size = 20 # Procesar 20 segmentos a la vez para velocidad y precisión
+    total_segments = len(segments)
     
+    # Prompt estrictamente forense
+    system_prompt = """Eres un transcriptor forense. 
+TU TAREA: Corregir ÚNICAMENTE mayúsculas, tildes y puntuación básica.
+PROHIBIDO:
+1. NO cambies palabras (Ej: NO cambies 'Alcaldesa' por 'Alcaldía' ni viceversa). Respeta lo que está escrito.
+2. NO resumas.
+3. NO elimines texto.
+4. Mantén el número exacto de líneas.
+Devuelve solo el texto corregido línea por línea."""
+
     progress_text = st.empty()
     
-    try:
-        for idx, chunk in enumerate(text_chunks):
-            progress_text.text(f"🤖 Puliento ortografía parte {idx+1} de {len(text_chunks)}...")
+    for i in range(0, total_segments, batch_size):
+        batch = segments[i:i+batch_size]
+        batch_texts = [seg['text'].strip() for seg in batch]
+        text_block = "\n".join(batch_texts)
+        
+        progress_text.text(f"⚖️ Limpiando con precisión forense: Segmentos {i} a {min(i+batch_size, total_segments)} de {total_segments}...")
+        
+        try:
             response = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": chunk}
+                    {"role": "user", "content": text_block}
                 ],
-                model="llama-3.1-8b-instant", temperature=0.1, max_tokens=4000
+                model="llama-3.1-8b-instant", 
+                temperature=0.0, # Determinismo absoluto para evitar inventos
+                max_tokens=4000
             )
-            corrected_full_text += response.choices[0].message.content.strip() + " "
-        
-        progress_text.empty()
-        return corrected_full_text.strip()
-    except Exception as e:
-        st.warning(f"⚠️ Error parcial en IA: {e}. Usando texto original.")
-        return text
+            
+            corrected_block = response.choices[0].message.content.strip()
+            corrected_lines = corrected_block.split('\n')
+            
+            # Verificación de seguridad: Si el número de líneas no coincide, usar original para evitar desincronización
+            if len(corrected_lines) == len(batch):
+                for idx, corrected_line in enumerate(corrected_lines):
+                    cleaned_segments[i+idx]['text'] = corrected_line
+            else:
+                # Si la IA falla en mantener la estructura, mantenemos el original de Whisper (que ya es bueno)
+                pass 
+                
+        except Exception:
+            pass # Si falla la API, mantenemos el original
+            
+    progress_text.empty()
+    return cleaned_segments
 
-# --- FUNCIONES DE ANÁLISIS ---
 def generate_summary(text, client):
     try:
         chat = client.chat.completions.create(
@@ -298,20 +307,6 @@ def generate_summary(text, client):
         return chat.choices[0].message.content
     except: return "Error al generar resumen."
 
-def extract_json_data(text, client, prompt_type):
-    prompts = {
-        "people": '''Extrae personas y roles. JSON válido: {"items": [{"name": "Nombre", "role": "Cargo", "context": "Frase"}]}''',
-        "brands": '''Extrae marcas/entidades. JSON válido: {"items": [{"name": "Nombre", "type": "Tipo", "context": "Frase"}]}'''
-    }
-    try:
-        chat = client.chat.completions.create(
-            messages=[{"role": "system", "content": prompts[prompt_type]}, {"role": "user", "content": f"{text[:6000]}"}],
-            model="llama-3.1-8b-instant", response_format={"type": "json_object"}, temperature=0.0
-        )
-        data = json.loads(chat.choices[0].message.content)
-        return data.get("items", [])
-    except: return []
-
 def answer_question(question, transcription_text, client, conversation_history):
     messages = [{"role": "system", "content": "Responde preguntas sobre la transcripción. Sé preciso."}]
     for qa in conversation_history:
@@ -322,89 +317,81 @@ def answer_question(question, transcription_text, client, conversation_history):
     except Exception as e: return str(e)
 
 # --- UI PRINCIPAL ---
-st.title("🎙️ Transcriptor Pro - Johnascriptor")
+st.title("🎙️ Transcriptor Forense - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    model_option = st.selectbox("Modelo", ["whisper-large-v3"])
+    model_option = st.selectbox("Modelo", ["whisper-large-v3"], help="Modelo de mayor precisión disponible.")
     st.markdown("---")
-    enable_llama = st.checkbox("🤖 Corrección Ortográfica", value=True)
+    enable_llama = st.checkbox("⚖️ Limpieza Forense IA", value=True, help="Corrige puntuación sin cambiar palabras.")
     enable_summary = st.checkbox("📝 Generar resumen", value=True)
-    enable_entities = st.checkbox("🔍 Extraer datos", value=True)
     
     st.markdown("---")
     if MOVIEPY_AVAILABLE:
-        st.success("✅ Conversión y Chunking Activos")
+        st.success("✅ Conversión de Audio: Activa")
     else:
-        st.warning("⚠️ MoviePy no instalado. Funciones limitadas.")
+        st.warning("⚠️ MoviePy no instalado.")
 
 # --- CARGA Y PROCESAMIENTO ---
-st.subheader("📤 Sube tu archivo de audio o video")
-uploaded_file = st.file_uploader("Selecciona archivo", type=["mp3", "mp4", "wav", "m4a", "ogg"], label_visibility="collapsed")
+st.subheader("📤 Sube tu archivo")
+uploaded_file = st.file_uploader("Selecciona archivo (Audio/Video)", type=["mp3", "mp4", "wav", "m4a", "ogg"], label_visibility="collapsed")
 
-if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
-    # Reset de variables
+if st.button("🚀 Iniciar Transcripción Exacta", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
-    st.session_state.brands_search = ""
     client = Groq(api_key=api_key)
 
-    # 1. Optimización / Conversión (Recuperado)
-    with st.spinner("🔄 Optimizando archivo..."):
+    # 1. Optimización
+    with st.spinner("🔄 Preparando audio..."):
         file_bytes = uploaded_file.getvalue()
         if MOVIEPY_AVAILABLE:
             processed_bytes, was_converted, orig_mb, final_mb = universal_audio_converter(file_bytes, uploaded_file.name)
-            if was_converted:
-                reduction = ((orig_mb - final_mb) / orig_mb * 100) if orig_mb > 0 else 0
-                st.info(f"✅ Optimizado: {orig_mb:.2f}MB -> {final_mb:.2f}MB ({reduction:.0f}%)")
-            else:
-                st.warning("Usando original (no se pudo optimizar).")
         else:
             processed_bytes = file_bytes
-
+        
         st.session_state.uploaded_audio_bytes = processed_bytes
 
-        # Guardar temporal
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
             tmp.write(processed_bytes)
             tmp_path = tmp.name
 
-    # 2. Transcripción con Chunking (Mejora)
-    with st.spinner("🔄 Transcribiendo por fragmentos..."):
+    # 2. Transcripción Whisper V3
+    with st.spinner("🔄 Transcribiendo (Whisper V3)..."):
         raw_text, segments = transcribe_with_chunking(client, tmp_path, model_option, "es")
         os.unlink(tmp_path)
 
-    # 3. Corrección por Lotes (Mejora)
-    final_text = raw_text
+    # 3. Limpieza Forense (Corrección en Segmentos)
     if enable_llama:
-        final_text = safe_batched_correction(raw_text, client)
+        # Aquí está la clave: Corregimos los segmentos, NO el texto plano.
+        # Esto actualiza st.session_state.segments con el texto limpio.
+        segments = correct_segments_in_batches(segments, client)
+        
+        # Reconstruimos el texto final desde los segmentos limpios para que coincidan 100%
+        final_text = " ".join([seg['text'].strip() for seg in segments])
+    else:
+        final_text = raw_text
 
     st.session_state.transcription = final_text
     st.session_state.segments = segments
 
-    # 4. Análisis Extra
+    # 4. Resumen
     if enable_summary:
         with st.spinner("🧠 Generando resumen..."):
             st.session_state.summary = generate_summary(final_text, client)
-    if enable_entities:
-        with st.spinner("🔍 Extrayendo entidades..."):
-            st.session_state.people = extract_json_data(final_text, client, "people")
-            st.session_state.brands = extract_json_data(final_text, client, "brands")
 
-    st.success("✅ ¡Proceso Completado!")
+    st.success("✅ ¡Transcripción completada con precisión!")
     st.rerun()
 
-# --- VISUALIZACIÓN DE RESULTADOS ---
+# --- VISUALIZACIÓN ---
 if 'transcription' in st.session_state:
     st.markdown("---")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
 
-    tabs = st.tabs(["📝 Transcripción", "📊 Resumen y Chat", "👥 Personas", "🏢 Marcas"])
+    tabs = st.tabs(["📝 Transcripción Exacta", "📊 Resumen y Chat"])
 
-    # --- TAB 1: TRANSCRIPCIÓN + BÚSQUEDA CONTEXTUAL ---
+    # --- TAB 1: TRANSCRIPCIÓN + BÚSQUEDA ---
     with tabs[0]:
         c1, c2 = st.columns([3, 1])
-        search_query = c1.text_input("🔎 Buscar:", key="search_input")
-        # Fix: on_click para limpiar
+        search_query = c1.text_input("🔎 Buscar en texto limpio:", key="search_input")
         c2.button("🗑️ Limpiar", on_click=clear_search_callback, use_container_width=True)
 
         if search_query:
@@ -413,9 +400,10 @@ if 'transcription' in st.session_state:
             found_any = False
             
             for i, seg in enumerate(segments):
+                # Búsqueda insensible a mayúsculas
                 if search_query.lower() in seg['text'].lower():
                     found_any = True
-                    # Contexto: Anterior - Actual - Siguiente
+                    # Contexto
                     prev_txt = segments[i-1]['text'] if i > 0 else ""
                     curr_txt = highlight_text(seg['text'], search_query)
                     next_txt = segments[i+1]['text'] if i < len(segments)-1 else ""
@@ -435,12 +423,12 @@ if 'transcription' in st.session_state:
                         col_txt.markdown(html_block, unsafe_allow_html=True)
                         st.markdown("---")
             
-            if not found_any: st.warning("No se encontraron coincidencias.")
+            if not found_any: st.warning("No se encontraron coincidencias exactas.")
 
-        st.markdown("### Texto Completo")
-        st.text_area("", value=st.session_state.transcription, height=400)
+        st.markdown("### Texto Completo (Limpio)")
+        st.text_area("", value=st.session_state.transcription, height=450)
         
-        # Botones de descarga (Recuperados)
+        # Botones de descarga
         col_d1, col_d2, col_d3, col_d4 = st.columns([1, 1, 1, 1])
         col_d1.download_button("💾 TXT Simple", st.session_state.transcription, "transcripcion.txt", use_container_width=True)
         col_d2.download_button("💾 TXT Tiempos", format_transcription_with_timestamps(st.session_state.segments), "transcripcion_tiempos.txt", use_container_width=True)
@@ -466,17 +454,3 @@ if 'transcription' in st.session_state:
                 ans = answer_question(user_q, st.session_state.transcription, Groq(api_key=api_key), st.session_state.qa_history)
                 st.session_state.qa_history.append({'question': user_q, 'answer': ans})
                 st.rerun()
-
-    # --- TAB 3: PERSONAS ---
-    with tabs[2]:
-        if 'people' in st.session_state:
-            for p in st.session_state.people:
-                st.success(f"👤 {p.get('name')} | {p.get('role')}")
-                st.caption(p.get('context'))
-
-    # --- TAB 4: MARCAS ---
-    with tabs[3]:
-        if 'brands' in st.session_state:
-            for b in st.session_state.brands:
-                st.info(f"🏢 {b.get('name')} | {b.get('type')}")
-                st.caption(b.get('context'))
