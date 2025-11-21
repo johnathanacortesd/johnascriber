@@ -3,4 +3,4 @@ groq==0.13.0
 moviepy==1.0.3
 imageio-ffmpeg==0.4.9
 imageio-ffmpeg
-openai
+
