@@ -95,7 +95,46 @@ def fix_spanish_encoding_light(text):
     
     return result.strip()
 
-# --- LIMPIEZA CONSERVADORA (MEJORA CLAVE) ---
+# --- CORRECCIÓN DETERMINÍSTICA (SIN IA) ---
+def fix_accents_deterministic(text):
+    """Corrección de tildes usando reglas fijas, SIN IA que pueda inventar"""
+    
+    # Palabras comunes que siempre llevan tilde
+    accent_corrections = {
+        # Interrogativos y exclamativos
+        r'\bcomo\b': 'cómo', r'\bque\b': 'qué', r'\bquien\b': 'quién', 
+        r'\bcual\b': 'cuál', r'\bcuales\b': 'cuáles', r'\bcuando\b': 'cuándo',
+        r'\bdonde\b': 'dónde', r'\bcuanto\b': 'cuánto', r'\bcuanta\b': 'cuánta',
+        
+        # Sustantivos comunes
+        r'\btelefonia\b': 'telefonía', r'\btecnologia\b': 'tecnología',
+        r'\badministracion\b': 'administración', r'\binformacion\b': 'información',
+        r'\bcomunicacion\b': 'comunicación', r'\beducacion\b': 'educación',
+        r'\bsolucion\b': 'solución', r'\batencion\b': 'atención',
+        r'\bdireccion\b': 'dirección', r'\bsituacion\b': 'situación',
+        
+        # Adjetivos comunes
+        r'\bpublico\b': 'público', r'\bpublica\b': 'pública',
+        r'\bpolitico\b': 'político', r'\bpolitica\b': 'política',
+        r'\btecnico\b': 'técnico', r'\btecnica\b': 'técnica',
+        r'\bbasico\b': 'básico', r'\bbasica\b': 'básica',
+        r'\brapido\b': 'rápido', r'\brapida\b': 'rápida',
+        
+        # Verbos en pasado
+        r'\bestaba\b': 'estaba', r'\bestuve\b': 'estuve',
+        r'\bhablo\b': 'habló', r'\bhable\b': 'hablé',
+        
+        # Pronombres
+        r'\bel\b(?=\s+(esta|estaba|fue))': 'él',
+        r'\btu\b(?=\s+(tienes|eres|estas))': 'tú',
+        r'\bmi\b(?=\s+(nombre|idea))': 'mí',
+    }
+    
+    result = text
+    for pattern, replacement in accent_corrections.items():
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    
+    return result
 def text_chunker_smart(text, chunk_size=3000):
     """Chunking más inteligente que respeta oraciones completas"""
     chunks = []
