@@ -362,8 +362,8 @@ with st.sidebar:
         if use_custom_prompt:
             custom_prompt = st.text_area(
                 "Prompt para Whisper:",
-                value="Transcripción en español de alta calidad con puntuación y tildes correctas.",
-                help="Incluye palabras técnicas que esperas en el audio (sin usar 'Palabras clave:')"
+                value="Esta es una transcripción profesional en español con puntuación correcta.",
+                help="Evita listas de palabras sueltas que Whisper pueda repetir. Usa frases completas."
             )
     
     context_lines = st.slider("Líneas de contexto búsqueda", 1, 5, 2)
@@ -430,9 +430,9 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
             transcription_text = post_process_conservative(transcription_text, client)
         # Si es "Ninguna", no hacer nada más
         
-        # Aplicar fix ligero a segmentos
+        # Aplicar fix ligero a segmentos y limpiar artefactos
         for seg in transcription.segments:
-            seg['text'] = fix_spanish_encoding_light(seg['text'])
+            seg['text'] = clean_whisper_artifacts(fix_spanish_encoding_light(seg['text']))
 
         st.session_state.transcription = transcription_text
         st.session_state.transcription_data = transcription
