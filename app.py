@@ -364,7 +364,7 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    model_option = st.selectbox("Modelo", ["whisper-large-v3-turbo", "whisper-large-v3"], 
+    model_option = st.selectbox("Modelo", ["whisper-large-v3", "whisper-large-v3-turbo"], 
                                  help="Turbo: Más rápido | V3: Máxima precisión")
     language = st.selectbox("Idioma", ["es"], help="Español optimizado.")
     
