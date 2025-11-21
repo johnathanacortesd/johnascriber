@@ -86,8 +86,8 @@ def fix_spanish_encoding_light(text):
     # Solo corrige errores de encoding UTF-8 malformado
     replacements = {
         'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 
-        'Ã±': 'ñ', 'Ã'': 'Ñ', 'Â¿': '¿', 'Â¡': '¡',
-        'Ã': 'Á', 'Ã‰': 'É', 'Ã': 'Í', 'Ã"': 'Ó', 'Ãš': 'Ú'
+        'Ã±': 'ñ', 'Ã\u00d1': 'Ñ', 'Â\u00bf': '¿', 'Â\u00a1': '¡',
+        'Ã\u00c1': 'Á', 'Ã\u0089': 'É', 'Ã\u00cd': 'Í', 'Ã\u0093': 'Ó', 'Ã\u009a': 'Ú'
     }
     
     for wrong, correct in replacements.items():
