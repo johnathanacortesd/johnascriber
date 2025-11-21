@@ -95,46 +95,7 @@ def fix_spanish_encoding_light(text):
     
     return result.strip()
 
-# --- CORRECCIÓN DETERMINÍSTICA (SIN IA) ---
-def fix_accents_deterministic(text):
-    """Corrección de tildes usando reglas fijas, SIN IA que pueda inventar"""
-    
-    # Palabras comunes que siempre llevan tilde
-    accent_corrections = {
-        # Interrogativos y exclamativos
-        r'\bcomo\b': 'cómo', r'\bque\b': 'qué', r'\bquien\b': 'quién', 
-        r'\bcual\b': 'cuál', r'\bcuales\b': 'cuáles', r'\bcuando\b': 'cuándo',
-        r'\bdonde\b': 'dónde', r'\bcuanto\b': 'cuánto', r'\bcuanta\b': 'cuánta',
-        
-        # Sustantivos comunes
-        r'\btelefonia\b': 'telefonía', r'\btecnologia\b': 'tecnología',
-        r'\badministracion\b': 'administración', r'\binformacion\b': 'información',
-        r'\bcomunicacion\b': 'comunicación', r'\beducacion\b': 'educación',
-        r'\bsolucion\b': 'solución', r'\batencion\b': 'atención',
-        r'\bdireccion\b': 'dirección', r'\bsituacion\b': 'situación',
-        
-        # Adjetivos comunes
-        r'\bpublico\b': 'público', r'\bpublica\b': 'pública',
-        r'\bpolitico\b': 'político', r'\bpolitica\b': 'política',
-        r'\btecnico\b': 'técnico', r'\btecnica\b': 'técnica',
-        r'\bbasico\b': 'básico', r'\bbasica\b': 'básica',
-        r'\brapido\b': 'rápido', r'\brapida\b': 'rápida',
-        
-        # Verbos en pasado
-        r'\bestaba\b': 'estaba', r'\bestuve\b': 'estuve',
-        r'\bhablo\b': 'habló', r'\bhable\b': 'hablé',
-        
-        # Pronombres
-        r'\bel\b(?=\s+(esta|estaba|fue))': 'él',
-        r'\btu\b(?=\s+(tienes|eres|estas))': 'tú',
-        r'\bmi\b(?=\s+(nombre|idea))': 'mí',
-    }
-    
-    result = text
-    for pattern, replacement in accent_corrections.items():
-        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
-    
-    return result
+# --- LIMPIEZA CONSERVADORA (MEJORA CLAVE) ---
 def text_chunker_smart(text, chunk_size=3000):
     """Chunking más inteligente que respeta oraciones completas"""
     chunks = []
@@ -313,9 +274,9 @@ with st.sidebar:
     # MEJORA: Opciones más claras
     correction_mode = st.radio(
         "🤖 Modo de corrección:",
-        ["Ninguna (Whisper puro)", "Diccionario (Sin IA)", "IA Conservadora", "IA Agresiva"],
+        ["Ninguna (Transcripción pura)", "Conservadora (Solo tildes)", "Agresiva (Completa)"],
         index=1,
-        help="Diccionario = reglas fijas sin IA. IA Conservadora = solo tildes con validación"
+        help="Conservadora = solo tildes y puntuación. Agresiva = puede cambiar palabras"
     )
     
     enable_summary = st.checkbox("📝 Generar resumen", value=True)
@@ -391,13 +352,9 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
         transcription_text = fix_spanish_encoding_light(transcription.text)
         
         # 4. POST-PROCESAMIENTO SEGÚN MODO
-        if correction_mode == "Diccionario (Sin IA)":
-            # Usar corrección determinística SIN IA
-            transcription_text = fix_accents_deterministic(transcription_text)
-            st.success("✅ Corrección aplicada con diccionario (sin IA)")
-        elif correction_mode == "IA Conservadora":
+        if correction_mode == "Conservadora (Solo tildes)":
             transcription_text = post_process_conservative(transcription_text, client)
-        elif correction_mode == "IA Agresiva":
+        elif correction_mode == "Agresiva (Completa)":
             # Usar tu función original si el usuario lo pide explícitamente
             st.warning("⚠️ Modo agresivo: puede alterar palabras técnicas")
             transcription_text = post_process_conservative(transcription_text, client)
@@ -437,92 +394,23 @@ if 'transcription' in st.session_state:
         search_query = col1.text_input("🔎 Buscar en texto:", key="search_input")
         col2.write(""); col2.button("🗑️", on_click=clear_search_callback)
 
-        # BÚSQUEDA MEJORADA - Muestra transcripción completa con resaltados
+        # BÚSQUEDA
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
-                # Buscar en la transcripción completa procesada
-                full_text = st.session_state.transcription
+                segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
-                
-                # Encontrar todas las coincidencias con sus posiciones
-                matches = list(pattern.finditer(full_text))
-                
+                matches = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
                 if matches:
-                    st.markdown(f"**{len(matches)} coincidencia(s) encontrada(s)**")
-                    st.markdown("---")
-                    
-                    # Obtener segmentos para los botones de tiempo
-                    segments = st.session_state.transcription_data.segments
-                    
-                    for idx, match in enumerate(matches):
-                        # Extraer contexto alrededor de la coincidencia (500 caracteres antes y después)
-                        start_pos = max(0, match.start() - 500)
-                        end_pos = min(len(full_text), match.end() + 500)
-                        
-                        # Ajustar al inicio de palabra/oración
-                        while start_pos > 0 and full_text[start_pos] not in ['.', '\n', ' ']:
-                            start_pos -= 1
-                        if start_pos > 0:
-                            start_pos += 1
-                        
-                        context = full_text[start_pos:end_pos].strip()
-                        
-                        # Aplicar resaltado
-                        context_highlighted = pattern.sub(
-                            f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', 
-                            context
-                        ).replace('\n', '<br>')
-                        
-                        # Encontrar el segmento más cercano para el botón de reproducción
-                        match_text = full_text[max(0, match.start()-50):match.end()+50]
-                        closest_segment = None
-                        min_distance = float('inf')
-                        
-                        for seg in segments:
-                            seg_text = seg['text'].strip()
-                            if search_query.lower() in seg_text.lower():
-                                # Calcular similitud simple
-                                if match_text.lower() in full_text[start_pos:end_pos].lower():
-                                    distance = abs(len(full_text[:match.start()].split()) - sum(1 for s in segments[:segments.index(seg)] for _ in s['text'].split()))
-                                    if distance < min_distance:
-                                        min_distance = distance
-                                        closest_segment = seg
-                        
-                        col_btn, col_text = st.columns([0.12, 0.88])
-                        
-                        with col_btn:
-                            if closest_segment:
-                                btn_key = f"play_search_{idx}_{closest_segment['start']}"
-                                st.button(
-                                    f"▶️ {format_timestamp(closest_segment['start'])}", 
-                                    key=btn_key, 
-                                    on_click=set_audio_time, 
-                                    args=(closest_segment['start'],),
-                                    use_container_width=True
-                                )
-                            else:
-                                st.write("")
-                        
-                        with col_text:
-                            # Mostrar con el mismo estilo negro de la transcripción completa
-                            st.markdown(f"""
-                            <div style="
-                                background-color: #000000; 
-                                color: #FFFFFF; 
-                                padding: 20px; 
-                                border-radius: 10px; 
-                                border: 2px solid #fca311;
-                                font-family: sans-serif; 
-                                line-height: 1.6;
-                                white-space: pre-wrap;">
-                                {context_highlighted}
-                            </div>
-                            """, unsafe_allow_html=True)
-                        
-                        if idx < len(matches) - 1:
-                            st.markdown("---")
-                else: 
-                    st.info("❌ Sin coincidencias para tu búsqueda.")
+                    for idx_match, i in enumerate(matches):
+                        for idx_ctx, ctx in enumerate(get_extended_context(segments, i, context_lines)):
+                            c_t, c_txt = st.columns([0.15, 0.85])
+                            btn_key = f"play_{idx_match}_{idx_ctx}_{ctx['start']}"
+                            c_t.button(f"▶️ {ctx['time']}", key=btn_key, on_click=set_audio_time, args=(ctx['start'],))
+                            
+                            txt_show = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', ctx['text']) if ctx['is_match'] else ctx['text']
+                            c_txt.markdown(txt_show, unsafe_allow_html=True)
+                        st.divider()
+                else: st.info("Sin coincidencias.")
 
         st.markdown("### 📄 Texto Transcrito")
         
