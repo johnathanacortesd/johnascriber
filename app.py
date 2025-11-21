@@ -95,7 +95,46 @@ def fix_spanish_encoding_light(text):
     
     return result.strip()
 
-# --- LIMPIEZA CONSERVADORA (MEJORA CLAVE) ---
+# --- CORRECCIÓN DETERMINÍSTICA (SIN IA) ---
+def fix_accents_deterministic(text):
+    """Corrección de tildes usando reglas fijas, SIN IA que pueda inventar"""
+    
+    # Palabras comunes que siempre llevan tilde
+    accent_corrections = {
+        # Interrogativos y exclamativos
+        r'\bcomo\b': 'cómo', r'\bque\b': 'qué', r'\bquien\b': 'quién', 
+        r'\bcual\b': 'cuál', r'\bcuales\b': 'cuáles', r'\bcuando\b': 'cuándo',
+        r'\bdonde\b': 'dónde', r'\bcuanto\b': 'cuánto', r'\bcuanta\b': 'cuánta',
+        
+        # Sustantivos comunes
+        r'\btelefonia\b': 'telefonía', r'\btecnologia\b': 'tecnología',
+        r'\badministracion\b': 'administración', r'\binformacion\b': 'información',
+        r'\bcomunicacion\b': 'comunicación', r'\beducacion\b': 'educación',
+        r'\bsolucion\b': 'solución', r'\batencion\b': 'atención',
+        r'\bdireccion\b': 'dirección', r'\bsituacion\b': 'situación',
+        
+        # Adjetivos comunes
+        r'\bpublico\b': 'público', r'\bpublica\b': 'pública',
+        r'\bpolitico\b': 'político', r'\bpolitica\b': 'política',
+        r'\btecnico\b': 'técnico', r'\btecnica\b': 'técnica',
+        r'\bbasico\b': 'básico', r'\bbasica\b': 'básica',
+        r'\brapido\b': 'rápido', r'\brapida\b': 'rápida',
+        
+        # Verbos en pasado
+        r'\bestaba\b': 'estaba', r'\bestuve\b': 'estuve',
+        r'\bhablo\b': 'habló', r'\bhable\b': 'hablé',
+        
+        # Pronombres
+        r'\bel\b(?=\s+(esta|estaba|fue))': 'él',
+        r'\btu\b(?=\s+(tienes|eres|estas))': 'tú',
+        r'\bmi\b(?=\s+(nombre|idea))': 'mí',
+    }
+    
+    result = text
+    for pattern, replacement in accent_corrections.items():
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    
+    return result
 def text_chunker_smart(text, chunk_size=3000):
     """Chunking más inteligente que respeta oraciones completas"""
     chunks = []
@@ -274,9 +313,9 @@ with st.sidebar:
     # MEJORA: Opciones más claras
     correction_mode = st.radio(
         "🤖 Modo de corrección:",
-        ["Ninguna (Transcripción pura)", "Conservadora (Solo tildes)", "Agresiva (Completa)"],
+        ["Ninguna (Whisper puro)", "Diccionario (Sin IA)", "IA Conservadora", "IA Agresiva"],
         index=1,
-        help="Conservadora = solo tildes y puntuación. Agresiva = puede cambiar palabras"
+        help="Diccionario = reglas fijas sin IA. IA Conservadora = solo tildes con validación"
     )
     
     enable_summary = st.checkbox("📝 Generar resumen", value=True)
@@ -352,9 +391,13 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
         transcription_text = fix_spanish_encoding_light(transcription.text)
         
         # 4. POST-PROCESAMIENTO SEGÚN MODO
-        if correction_mode == "Conservadora (Solo tildes)":
+        if correction_mode == "Diccionario (Sin IA)":
+            # Usar corrección determinística SIN IA
+            transcription_text = fix_accents_deterministic(transcription_text)
+            st.success("✅ Corrección aplicada con diccionario (sin IA)")
+        elif correction_mode == "IA Conservadora":
             transcription_text = post_process_conservative(transcription_text, client)
-        elif correction_mode == "Agresiva (Completa)":
+        elif correction_mode == "IA Agresiva":
             # Usar tu función original si el usuario lo pide explícitamente
             st.warning("⚠️ Modo agresivo: puede alterar palabras técnicas")
             transcription_text = post_process_conservative(transcription_text, client)
@@ -394,23 +437,63 @@ if 'transcription' in st.session_state:
         search_query = col1.text_input("🔎 Buscar en texto:", key="search_input")
         col2.write(""); col2.button("🗑️", on_click=clear_search_callback)
 
-        # BÚSQUEDA
+        # BÚSQUEDA MEJORADA
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
                 segments = st.session_state.transcription_data.segments
                 pattern = re.compile(re.escape(search_query), re.IGNORECASE)
                 matches = [i for i, seg in enumerate(segments) if pattern.search(seg['text'])]
+                
                 if matches:
+                    st.markdown(f"**{len(matches)} coincidencia(s) encontrada(s)**")
+                    
                     for idx_match, i in enumerate(matches):
-                        for idx_ctx, ctx in enumerate(get_extended_context(segments, i, context_lines)):
-                            c_t, c_txt = st.columns([0.15, 0.85])
-                            btn_key = f"play_{idx_match}_{idx_ctx}_{ctx['start']}"
-                            c_t.button(f"▶️ {ctx['time']}", key=btn_key, on_click=set_audio_time, args=(ctx['start'],))
-                            
-                            txt_show = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', ctx['text']) if ctx['is_match'] else ctx['text']
-                            c_txt.markdown(txt_show, unsafe_allow_html=True)
-                        st.divider()
-                else: st.info("Sin coincidencias.")
+                        context_segments = get_extended_context(segments, i, context_lines)
+                        
+                        # Construir texto completo del contexto
+                        context_html = ""
+                        for idx_ctx, ctx in enumerate(context_segments):
+                            # Aplicar resaltado solo a la línea que coincide
+                            if ctx['is_match']:
+                                text_highlighted = pattern.sub(f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', ctx['text'])
+                                context_html += f"<strong>[{ctx['time']}]</strong> {text_highlighted}<br>"
+                            else:
+                                context_html += f"<span style='color: #999;'>[{ctx['time']}]</span> {ctx['text']}<br>"
+                        
+                        # Mostrar en contenedor con estilo negro
+                        col_btn, col_text = st.columns([0.12, 0.88])
+                        
+                        with col_btn:
+                            # Botón para ir al tiempo del match principal
+                            btn_key = f"play_match_{idx_match}_{matches[i]}"
+                            match_time = segments[i]['start']
+                            st.button(
+                                f"▶️ Ir", 
+                                key=btn_key, 
+                                on_click=set_audio_time, 
+                                args=(match_time,),
+                                use_container_width=True
+                            )
+                        
+                        with col_text:
+                            st.markdown(f"""
+                            <div style="
+                                background-color: #000000; 
+                                color: #FFFFFF; 
+                                padding: 15px; 
+                                border-radius: 8px; 
+                                border: 2px solid #fca311;
+                                font-family: sans-serif; 
+                                line-height: 1.8;
+                                margin-bottom: 10px;">
+                                {context_html}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        if idx_match < len(matches) - 1:
+                            st.markdown("---")
+                else: 
+                    st.info("❌ Sin coincidencias para tu búsqueda.")
 
         st.markdown("### 📄 Texto Transcrito")
         
