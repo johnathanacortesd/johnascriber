@@ -75,7 +75,7 @@ except KeyError:
     st.info("Por favor configura tu API Key en Settings → Secrets")
     st.stop()
 
-# --- DICCIONARIO DE CORRECCIONES ---
+# --- DICCIONARIO DE CORRECCIONES (REGEX) ---
 SPANISH_WORD_CORRECTIONS = {
     r'\bS\s+([A-Z][a-zá-úñ]+)\b': r'Sí, \1',
     r'\badministraci(?!ón\b)\b': 'administración', r'\bAdministraci(?!ón\b)\b': 'Administración',
@@ -116,73 +116,74 @@ def format_transcription_with_timestamps(data):
 def fix_spanish_encoding(text):
     if not text: return text
     result = text
+    # 1. Arreglos rápidos de codificación
     encoding_fixes = {
         'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 
         'Ã±': 'ñ', 'Ã\'': 'Ñ', 'Â\u00bf': '\u00bf', 'Â\u00a1': '\u00a1'
     }
     for wrong, correct in encoding_fixes.items():
         result = result.replace(wrong, correct)
+    # 2. Arreglos por Regex
     for pattern, replacement in SPANISH_WORD_CORRECTIONS.items():
         result = re.sub(pattern, replacement, result)
+    # 3. Capitalización básica después de punto
     result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
     if result and result[0].islower():
         result = result[0].upper() + result[1:]
     return result.strip()
 
-# --- FUNCIONES DE CONVERSIÓN Y COMPRESIÓN (MEJORADA) ---
+# --- FUNCIONES DE CONVERSIÓN DE AUDIO (OPTIMIZADA) ---
 def get_file_size_mb(file_bytes):
-    """Calcula el tamaño del archivo en MB"""
     return len(file_bytes) / (1024 * 1024)
 
-def universal_audio_converter(file_bytes, filename, target_bitrate='64k'):
+def universal_audio_converter(file_bytes, filename):
     """
-    Convierte cualquier archivo de audio/video a MP3 optimizado para transcripción.
-    MEJORA: Fuerza 16kHz (nativo Whisper), Mono (1 canal) y 64kbps para máxima velocidad.
+    Fuerza la conversión a MP3 Mono 16kHz 64kbps.
+    Esta configuración es infalible para Whisper y reduce el tamaño drásticamente.
     """
     try:
         original_size = get_file_size_mb(file_bytes)
         file_ext = os.path.splitext(filename)[1].lower()
-        
+        if not file_ext: file_ext = ".mp3" # Fallback
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_input:
             tmp_input.write(file_bytes)
             input_path = tmp_input.name
         
-        output_path = input_path.rsplit('.', 1)[0] + '_converted.mp3'
+        output_path = input_path + "_opt.mp3"
         
+        # Proceso agresivo de conversión
         try:
-            # Detectar si es video o audio para cargar la clase correcta
-            if file_ext in ['.mp4', '.mpeg', '.webm', '.avi', '.mov', '.mkv']:
-                clip = VideoFileClip(input_path)
-                audio = clip.audio
-            else:
-                audio = AudioFileClip(input_path)
-                clip = None
+            # Usamos AudioFileClip que maneja tanto video como audio
+            audio = AudioFileClip(input_path)
             
-            # Escribir archivo optimizado
             audio.write_audiofile(
-                output_path, 
-                codec='libmp3lame', 
-                bitrate=target_bitrate,
-                fps=16000,       # Sample rate nativo de Whisper (Clave para precisión)
+                output_path,
+                codec='libmp3lame',
+                bitrate='64k',      # Bitrate suficiente para voz
+                fps=16000,          # Frecuencia nativa de Whisper (CRÍTICO)
                 nbytes=2,
-                ffmpeg_params=["-ac", "1"], # Forzar Mono (Reduce tamaño a la mitad sin perder calidad de voz)
-                verbose=False, 
+                ffmpeg_params=["-ac", "1"], # Forzar MONO (reduce tamaño 50%)
+                verbose=False,
                 logger=None
             )
             
+            # Limpieza de objetos
             audio.close()
-            if clip: clip.close()
             
             with open(output_path, 'rb') as f:
                 mp3_bytes = f.read()
             
             final_size = get_file_size_mb(mp3_bytes)
+            
+            # Limpieza de archivos
             os.unlink(input_path)
             os.unlink(output_path)
+            
             return mp3_bytes, True, original_size, final_size
             
         except Exception as e:
-            # Limpieza en caso de error
+            # Si falla la conversión interna, limpiar y devolver False
             if os.path.exists(input_path): os.unlink(input_path)
             if os.path.exists(output_path): os.unlink(output_path)
             return file_bytes, False, original_size, original_size
@@ -192,52 +193,51 @@ def universal_audio_converter(file_bytes, filename, target_bitrate='64k'):
 
 def process_audio_for_transcription(uploaded_file):
     """
-    Procesa el archivo cargado y lo optimiza para transcripción
-    SIEMPRE convierte a MP3 optimizado para máxima velocidad y precisión
+    Gestor de conversión. Intenta convertir SIEMPRE para asegurar consistencia.
     """
     file_bytes = uploaded_file.getvalue()
     original_size = get_file_size_mb(file_bytes)
-    file_ext = os.path.splitext(uploaded_file.name)[1].lower()
     
-    # Convertir para asegurar formato correcto (Mono 16kHz) incluso si es MP3
-    should_convert = True 
-    
-    if should_convert and MOVIEPY_AVAILABLE:
+    if MOVIEPY_AVAILABLE:
         processed_bytes, was_converted, orig_mb, final_mb = universal_audio_converter(file_bytes, uploaded_file.name)
+        
         if was_converted:
             reduction = ((orig_mb - final_mb) / orig_mb * 100) if orig_mb > 0 else 0
-            # Mensaje actualizado reflejando la optimización técnica
-            msg = f"✅ Archivo optimizado: {orig_mb:.2f} MB → {final_mb:.2f} MB (Reducción {reduction:.1f}%) | MP3 Mono 16kHz"
+            msg = f"✅ Audio optimizado: {orig_mb:.2f} MB → {final_mb:.2f} MB (Reducción {reduction:.0f}%) | MP3 Mono 16kHz"
             return processed_bytes, {'converted': True, 'message': msg}
         else:
-            return file_bytes, {'converted': False, 'message': f"⚠️ No se pudo optimizar, procesando original ({original_size:.2f} MB)."}
-    elif not MOVIEPY_AVAILABLE:
-        return file_bytes, {'converted': False, 'message': f"⚠️ MoviePy no disponible. Procesando archivo original ({original_size:.2f} MB)."}
+            return file_bytes, {'converted': False, 'message': f"⚠️ No se pudo optimizar (Error interno), usando original ({original_size:.2f} MB)."}
     else:
-        return file_bytes, {'converted': False, 'message': f"📁 Archivo original ({original_size:.2f} MB)."}
+        return file_bytes, {'converted': False, 'message': f"⚠️ MoviePy no instalado. Usando original ({original_size:.2f} MB)."}
 
-# --- FUNCIÓN DE POST-PROCESAMIENTO CON IA ---
+# --- FUNCIÓN DE POST-PROCESAMIENTO CON IA (REFORZADA) ---
 def post_process_with_llama(transcription_text, client):
+    """
+    Usa Llama-3.1 para corregir ortografía SIN modificar contenido.
+    """
     try:
+        # Prompt del sistema blindado contra alucinaciones o resúmenes
+        system_prompt = """Eres un corrector ortográfico experto y estricto. 
+TU TAREA: Corregir ÚNICAMENTE tildes, puntuación y errores ortográficos evidentes en el texto proporcionado.
+REGLAS ABSOLUTAS:
+1. NO resumas el texto. Debes devolverlo completo.
+2. NO cambies palabras por sinónimos.
+3. NO agregues introducciones como "Aquí está el texto". Devuelve SOLO el texto corregido.
+4. Respeta nombres propios, marcas y jerga técnica.
+5. Si el texto es muy largo, asegúrate de procesarlo todo hasta el final."""
+
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": """Eres un micro-servicio de corrección de texto, no un editor. Tu comportamiento es estrictamente reglado.
-
-**REGLAS INVIOLABLES:**
-1.  **ACENTUACIÓN PRECISA:** Tu tarea principal es añadir tildes faltantes a palabras que inequívocamente las requieren (ej: `como` -> `cómo`, `esta` -> `está`, `mas` -> `más`).
-2.  **COMPLETAR PALABRAS:** Únicamente completarás palabras con terminaciones obvias y comunes en transcripciones (ej: `informaci` -> `información`, `tecnolog` -> `tecnología`).
-3.  **NO CAMBIAR PALABRAS VÁLIDAS:** Si una palabra ya es correcta y existe en el diccionario español, NO la modificarás bajo ninguna circunstancia.
-4.  **PROHIBIDO INVENTAR, OMITIR O REESCRIBIR:** No puedes añadir, eliminar ni cambiar el orden de las palabras. No puedes reescribir frases.
-5.  **DEVOLVER TEXTO ÍNTEGRO:** Siempre devolverás el texto completo, aplicando únicamente las correcciones permitidas.
-
-Tu salida debe ser únicamente el texto corregido."""},
-                {"role": "user", "content": f"Aplica tus reglas de corrección a la siguiente transcripción. No alteres nada más:\n\n{transcription_text}"}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Texto a corregir:\n\n{transcription_text}"}
             ],
-            model="llama-3.1-8b-instant", temperature=0.0, max_tokens=4096
+            model="llama-3.1-8b-instant", 
+            temperature=0.1,     # Temperatura baja para ser conservador
+            max_tokens=8000      # Aumentado para evitar cortes en textos largos
         )
         return chat_completion.choices[0].message.content.strip()
     except Exception as e:
-        st.warning(f"⚠️ No se pudo aplicar post-procesamiento con IA: {str(e)}")
+        st.warning(f"⚠️ La corrección con IA tardó demasiado o falló: {str(e)}")
         return transcription_text
 
 # --- FUNCIONES DE ANÁLISIS ---
@@ -269,7 +269,6 @@ def answer_question(question, transcription_text, client, conversation_history):
         return f"Error al procesar la pregunta: {str(e)}"
 
 def extract_people_and_roles(transcription_text, client):
-    """Extrae personas y sus roles con manejo robusto de errores"""
     try:
         chat_completion = client.chat.completions.create(
             messages=[
@@ -281,7 +280,7 @@ REGLAS:
 FORMATO DE SALIDA (JSON válido):
 { "personas": [ { "name": "Nombre", "role": "Cargo", "context": "Contexto" } ] }
 Si no hay personas, devuelve: {"personas": []}'''},
-                {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:3000]}"}
+                {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:4000]}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.0, max_tokens=1500, response_format={"type": "json_object"}
         )
@@ -301,7 +300,6 @@ Si no hay personas, devuelve: {"personas": []}'''},
         return []
 
 def extract_brands_and_entities(transcription_text, client):
-    """Extrae marcas y entidades con contexto y timestamps"""
     try:
         chat_completion = client.chat.completions.create(
             messages=[
@@ -313,7 +311,7 @@ REGLAS:
 FORMATO DE SALIDA (JSON válido):
 { "entidades": [ { "name": "Nombre", "type": "Tipo", "context": "Contexto exacto de la transcripción" } ] }
 Si no hay entidades, devuelve: {"entidades": []}'''},
-                {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:4000]}"}
+                {"role": "user", "content": f"Analiza esta transcripción:\n\n{transcription_text[:5000]}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.0, max_tokens=2000, response_format={"type": "json_object"}
         )
@@ -349,7 +347,6 @@ def export_to_srt(data):
     return "\n".join(srt_content)
 
 def find_brand_in_segments(brand_name, segments):
-    """Busca una marca en los segmentos y devuelve las coincidencias con timestamps"""
     matches = []
     pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
     for i, seg in enumerate(segments):
@@ -367,7 +364,8 @@ with st.sidebar:
     
     st.markdown("---")
     st.subheader("🎯 Análisis Inteligente")
-    enable_llama_postprocess = st.checkbox("🤖 Post-procesamiento IA", value=True, help="Usa Llama-3.1 para corregir tildes.")
+    # Activado por defecto el post-procesamiento
+    enable_llama_postprocess = st.checkbox("🤖 Corrección Ortográfica IA", value=True, help="Usa Llama-3.1 para corregir tildes sin cortar texto.")
     enable_summary = st.checkbox("📝 Generar resumen", value=True)
     enable_people = st.checkbox("👥 Extraer personas", value=True)
     enable_brands = st.checkbox("🏢 Extraer marcas", value=True)
@@ -378,18 +376,11 @@ with st.sidebar:
     
     st.markdown("---")
     if MOVIEPY_AVAILABLE:
-        st.success("""
-        ✅ **Optimización Activada:**
-        - Todos los archivos → MP3 64kbps
-        - Mono 16kHz (óptimo para voz)
-        - Máxima velocidad de transcripción
-        - Mayor precisión en el resultado
-        """)
+        st.success("✅ **Motor de Audio Activo:** Conversión automática a MP3 Mono 64kbps para máxima velocidad.")
     else:
         st.warning("⚠️ MoviePy no disponible. Instala con: `pip install moviepy`")
     
-    st.info("💡 Formatos soportados: MP3, MP4, WAV, M4A, WEBM, AVI, MOV, etc.")
-    st.success("✅ API Key configurada.")
+    st.info("💡 Sube cualquier archivo (Video/Audio). Se optimizará automáticamente.")
 
 st.subheader("📤 Sube tu archivo de audio o video")
 col1, col2 = st.columns([3, 1])
@@ -397,6 +388,7 @@ with col1:
     uploaded_file = st.file_uploader("Selecciona un archivo", type=["mp3", "mp4", "wav", "webm", "m4a", "mpeg", "mpga", "avi", "mov", "mkv", "flac"], label_visibility="collapsed")
 with col2:
     if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=True, disabled=not uploaded_file):
+        # Limpieza de estado al iniciar
         for key in list(st.session_state.keys()):
             if key not in ['password_correct', 'password_attempted']:
                 del st.session_state[key]
@@ -405,8 +397,8 @@ with col2:
         st.session_state.brands_search = ""
         
         try:
-            with st.spinner("🔄 Procesando y optimizando archivo para máxima velocidad y precisión..."):
-                # Llama a la función con la optimización de audio mejorada
+            # 1. Optimización de Audio
+            with st.spinner("🔄 Optimizando archivo de audio (Mono/16kHz/MP3)..."):
                 file_bytes, conversion_info = process_audio_for_transcription(uploaded_file)
                 st.info(conversion_info['message'])
 
@@ -417,31 +409,36 @@ with col2:
                 tmp.write(file_bytes)
                 tmp_path = tmp.name
             
-            with st.spinner("🔄 Transcribiendo con IA (modo de máxima precisión)..."):
+            # 2. Transcripción Whisper con Prompt de Ortografía
+            with st.spinner("🔄 Transcribiendo con Whisper V3 (Modo Preciso)..."):
                 with open(tmp_path, "rb") as audio_file:
-                    # AÑADIDO: Prompt específico para mejorar tildes y ortografía en el motor base
                     transcription = client.audio.transcriptions.create(
                         file=(uploaded_file.name, audio_file.read()), 
                         model=model_option, 
                         language=language,
                         response_format="verbose_json",
                         temperature=0.0,
-                        prompt="Esta es una transcripción en español. Debe tener ortografía perfecta, incluyendo tildes (á, é, í, ó, ú) y signos de puntuación correctos."
+                        # PROMPT CLAVE PARA PRECISIÓN INICIAL
+                        prompt="Transcripción exacta en español. Usar tildes correctamente en palabras como: Bogotá, comunicación, administración, público, generó, mató."
                     )
             os.unlink(tmp_path)
             
             transcription_text = fix_spanish_encoding(transcription.text)
+            
+            # 3. Post-procesamiento Llama (Corrección)
             if enable_llama_postprocess:
-                with st.spinner("🤖 Mejorando transcripción con IA..."):
+                with st.spinner("🤖 Llama 3.1 puliendo ortografía (sin cortar texto)..."):
                     transcription_text = post_process_with_llama(transcription_text, client)
             
+            # Limpieza básica también en segmentos
             for seg in transcription.segments:
                 seg['text'] = fix_spanish_encoding(seg['text'])
             
             st.session_state.transcription = transcription_text
             st.session_state.transcription_data = transcription
             
-            with st.spinner("🧠 Generando análisis avanzado..."):
+            # 4. Análisis de Entidades
+            with st.spinner("🧠 Extrayendo datos clave..."):
                 if enable_summary: 
                     st.session_state.summary = generate_summary(transcription_text, client)
                 if enable_people: 
@@ -449,11 +446,11 @@ with col2:
                 if enable_brands: 
                     st.session_state.brands = extract_brands_and_entities(transcription_text, client)
             
-            st.success("✅ ¡Transcripción y análisis completados!")
+            st.success("✅ ¡Proceso Completado!")
             st.balloons()
             st.rerun()
         except Exception as e:
-            st.error(f"❌ Error durante la transcripción: {e}")
+            st.error(f"❌ Error crítico: {e}")
 
 if 'transcription' in st.session_state:
     st.markdown("---")
@@ -467,6 +464,7 @@ if 'transcription' in st.session_state:
         tab_titles.append("🏢 Marcas")
     tabs = st.tabs(tab_titles)
     
+    # --- PESTAÑA 1: TRANSCRIPCIÓN ---
     with tabs[0]:
         HIGHLIGHT_STYLE = "background-color:#fca311;color:#14213d;padding:2px 5px;border-radius:4px;font-weight:bold;"
         MATCH_LINE_STYLE = "background-color:#1e3a5f;padding:0.8rem;border-radius:6px;border-left:4px solid #fca311;color:#ffffff;"
@@ -518,6 +516,7 @@ if 'transcription' in st.session_state:
         with c4: 
             create_copy_button(st.session_state.transcription)
 
+    # --- PESTAÑA 2: RESUMEN Y CHAT ---
     with tabs[1]:
         if 'summary' in st.session_state:
             st.markdown("### 📝 Resumen Ejecutivo")
@@ -562,88 +561,71 @@ if 'transcription' in st.session_state:
                     st.markdown(f"> {person.get('context', 'N/A')}")
         tab_idx += 1
 
-
-    # Reemplaza la sección de marcas (aproximadamente líneas 600-640) con esto:
-
-if 'brands' in st.session_state and st.session_state.brands:
-    with tabs[tab_idx]:
-        st.markdown("### 🏢 Marcas y Organizaciones Mencionadas")
-        
-        # Búsqueda contextual para marcas
-        col_brand_search1, col_brand_search2 = st.columns([4, 1])
-        with col_brand_search1: 
-            brand_search_query = st.text_input("🔎 Buscar marca específica:", key="brands_search")
-        with col_brand_search2: 
-            st.write("")
-            st.button("🗑️ Limpiar", on_click=clear_brands_search_callback, use_container_width=True, disabled=not brand_search_query, key="clear_brands_btn")
-        
-        # Filtrar marcas según búsqueda
-        brands_to_show = st.session_state.brands
-        if brand_search_query:
-            pattern = re.compile(re.escape(brand_search_query), re.IGNORECASE)
-            brands_to_show = [b for b in st.session_state.brands if pattern.search(b.get('name', ''))]
-            if brands_to_show:
-                st.success(f"✅ {len(brands_to_show)} marca(s) encontrada(s).")
-            else:
-                st.info("❌ No se encontraron marcas con ese nombre.")
-        
-        # Mostrar marcas con búsqueda en transcripción
-        for brand_idx, brand in enumerate(brands_to_show):  # ← AGREGADO brand_idx
-            brand_name = brand.get('name', 'N/A')
-            brand_type = brand.get('type', 'N/A')
+    if 'brands' in st.session_state and st.session_state.brands:
+        with tabs[tab_idx]:
+            st.markdown("### 🏢 Marcas y Organizaciones Mencionadas")
             
-            st.markdown(f"**🏢 {brand_name}** | **Tipo:** *{brand_type}*")
+            col_brand_search1, col_brand_search2 = st.columns([4, 1])
+            with col_brand_search1: 
+                brand_search_query = st.text_input("🔎 Buscar marca específica:", key="brands_search")
+            with col_brand_search2: 
+                st.write("")
+                st.button("🗑️ Limpiar", on_click=clear_brands_search_callback, use_container_width=True, disabled=not brand_search_query, key="clear_brands_btn")
             
-            # Expandir con contexto y timestamps
-            with st.expander("Ver contexto y menciones en audio"):
-                st.markdown(f"**Contexto identificado por IA:**")
-                st.markdown(f"> {brand.get('context', 'Sin contexto')}")
-                
-                # Buscar en segmentos de la transcripción
-                segments = st.session_state.transcription_data.segments
-                matches = find_brand_in_segments(brand_name, segments)
-                
-                if matches:
-                    st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s) en la transcripción:**")
-                    st.markdown("---")
-                    
-                    for occurrence_idx, match_idx in enumerate(matches):  # ← AGREGADO occurrence_idx
-                        context_segments = get_extended_context(segments, match_idx, context_lines)
-                        
-                        for ctx_idx, ctx_seg in enumerate(context_segments):  # ← AGREGADO ctx_idx
-                            col_time, col_text = st.columns([0.15, 0.85])
-                            
-                            with col_time:
-                                # ↓ CLAVE ÚNICA: brand_idx + occurrence_idx + ctx_idx
-                                st.button(
-                                    f"▶️ {ctx_seg['time']}", 
-                                    key=f"brand_play_{brand_idx}_{occurrence_idx}_{ctx_idx}_{ctx_seg['start']}", 
-                                    on_click=set_audio_time, 
-                                    args=(ctx_seg['start'],), 
-                                    use_container_width=True
-                                )
-                            
-                            with col_text:
-                                if ctx_seg['is_match']:
-                                    # Resaltar la marca en el texto
-                                    pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
-                                    highlighted_text = pattern.sub(
-                                        f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', 
-                                        ctx_seg['text']
-                                    )
-                                    st.markdown(
-                                        f"<div style='{MATCH_LINE_STYLE}'>{highlighted_text}</div>", 
-                                        unsafe_allow_html=True
-                                    )
-                                else:
-                                    st.markdown(
-                                        f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", 
-                                        unsafe_allow_html=True
-                                    )
-                        
-                        st.markdown("---")
+            brands_to_show = st.session_state.brands
+            if brand_search_query:
+                pattern = re.compile(re.escape(brand_search_query), re.IGNORECASE)
+                brands_to_show = [b for b in st.session_state.brands if pattern.search(b.get('name', ''))]
+                if brands_to_show:
+                    st.success(f"✅ {len(brands_to_show)} marca(s) encontrada(s).")
                 else:
-                    st.info("ℹ️ No se encontraron menciones exactas en los segmentos de la transcripción.")
+                    st.info("❌ No se encontraron marcas con ese nombre.")
+            
+            for brand_idx, brand in enumerate(brands_to_show):
+                brand_name = brand.get('name', 'N/A')
+                brand_type = brand.get('type', 'N/A')
+                
+                st.markdown(f"**🏢 {brand_name}** | **Tipo:** *{brand_type}*")
+                
+                with st.expander("Ver contexto y menciones en audio"):
+                    st.markdown(f"**Contexto identificado por IA:**")
+                    st.markdown(f"> {brand.get('context', 'Sin contexto')}")
+                    
+                    segments = st.session_state.transcription_data.segments
+                    matches = find_brand_in_segments(brand_name, segments)
+                    
+                    if matches:
+                        st.markdown(f"**📍 {len(matches)} mención(es) encontrada(s) en la transcripción:**")
+                        st.markdown("---")
+                        
+                        for occurrence_idx, match_idx in enumerate(matches):
+                            context_segments = get_extended_context(segments, match_idx, context_lines)
+                            
+                            for ctx_idx, ctx_seg in enumerate(context_segments):
+                                col_time, col_text = st.columns([0.15, 0.85])
+                                
+                                with col_time:
+                                    st.button(
+                                        f"▶️ {ctx_seg['time']}", 
+                                        key=f"brand_play_{brand_idx}_{occurrence_idx}_{ctx_idx}_{ctx_seg['start']}", 
+                                        on_click=set_audio_time, 
+                                        args=(ctx_seg['start'],), 
+                                        use_container_width=True
+                                    )
+                                
+                                with col_text:
+                                    if ctx_seg['is_match']:
+                                        pattern = re.compile(re.escape(brand_name), re.IGNORECASE)
+                                        highlighted_text = pattern.sub(
+                                            f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', 
+                                            ctx_seg['text']
+                                        )
+                                        st.markdown(f"<div style='{MATCH_LINE_STYLE}'>{highlighted_text}</div>", unsafe_allow_html=True)
+                                    else:
+                                        st.markdown(f"<div style='{CONTEXT_LINE_STYLE}'>{ctx_seg['text']}</div>", unsafe_allow_html=True)
+                            st.markdown("---")
+                    else:
+                        st.info("ℹ️ No se encontraron menciones exactas en los segmentos de la transcripción.")
 
 # --- Pie de página y Limpieza ---
 st.markdown("---")
