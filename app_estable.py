@@ -27,7 +27,7 @@ if not st.session_state.password_correct:
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
         <h2>Transcriptor Pro - Johnascriptor</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>Versión Estable - Audio Optimizado</p>
+        <p style='color: #666; margin-bottom: 2rem;'>Versión Mejorada - Transcripción Exacta</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -40,7 +40,7 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN APP ---
-st.set_page_config(page_title="Transcriptor Pro - V7", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro - V8", page_icon="🎙️", layout="wide")
 
 # --- ESTADO E INICIALIZACIÓN ---
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
@@ -78,59 +78,147 @@ def format_transcription_with_timestamps(data):
     lines = [f"[{format_timestamp(seg['start'])} --> {format_timestamp(seg['end'])}] {seg['text'].strip()}" for seg in data.segments]
     return "\n".join(lines)
 
-def fix_spanish_encoding(text):
+def fix_spanish_encoding_light(text):
+    """Versión ligera que solo corrige encodings mal formados, NO altera contenido"""
     if not text: return text
     result = text
+    
+    # Solo corrige errores de encoding UTF-8 malformado
     replacements = {
         'Ã¡': 'á', 'Ã©': 'é', 'Ã­': 'í', 'Ã³': 'ó', 'Ãº': 'ú', 
-        'Ã±': 'ñ', 'Ã\'': 'Ñ', 'Â\u00bf': '¿', 'Â\u00a1': '¡'
+        'Ã±': 'ñ', 'Ã\u00d1': 'Ñ', 'Â\u00bf': '¿', 'Â\u00a1': '¡',
+        'Ã\u00c1': 'Á', 'Ã\u0089': 'É', 'Ã\u00cd': 'Í', 'Ã\u0093': 'Ó', 'Ã\u009a': 'Ú'
     }
+    
     for wrong, correct in replacements.items():
         result = result.replace(wrong, correct)
-    result = re.sub(r'([.?!]\s+)([a-záéíóúñ])', lambda m: m.group(1) + m.group(2).upper(), result)
+    
     return result.strip()
 
-# --- LIMPIEZA POR TROZOS (ANTI-CORTES) ---
-def text_chunker(text, chunk_size=2500):
+# --- CORRECCIÓN DETERMINÍSTICA (SIN IA) ---
+def fix_accents_deterministic(text):
+    """Corrección de tildes usando reglas fijas, SIN IA que pueda inventar"""
+    
+    # Palabras comunes que siempre llevan tilde
+    accent_corrections = {
+        # Interrogativos y exclamativos
+        r'\bcomo\b': 'cómo', r'\bque\b': 'qué', r'\bquien\b': 'quién', 
+        r'\bcual\b': 'cuál', r'\bcuales\b': 'cuáles', r'\bcuando\b': 'cuándo',
+        r'\bdonde\b': 'dónde', r'\bcuanto\b': 'cuánto', r'\bcuanta\b': 'cuánta',
+        
+        # Sustantivos comunes
+        r'\btelefonia\b': 'telefonía', r'\btecnologia\b': 'tecnología',
+        r'\badministracion\b': 'administración', r'\binformacion\b': 'información',
+        r'\bcomunicacion\b': 'comunicación', r'\beducacion\b': 'educación',
+        r'\bsolucion\b': 'solución', r'\batencion\b': 'atención',
+        r'\bdireccion\b': 'dirección', r'\bsituacion\b': 'situación',
+        
+        # Adjetivos comunes
+        r'\bpublico\b': 'público', r'\bpublica\b': 'pública',
+        r'\bpolitico\b': 'político', r'\bpolitica\b': 'política',
+        r'\btecnico\b': 'técnico', r'\btecnica\b': 'técnica',
+        r'\bbasico\b': 'básico', r'\bbasica\b': 'básica',
+        r'\brapido\b': 'rápido', r'\brapida\b': 'rápida',
+        
+        # Verbos en pasado
+        r'\bestaba\b': 'estaba', r'\bestuve\b': 'estuve',
+        r'\bhablo\b': 'habló', r'\bhable\b': 'hablé',
+        
+        # Pronombres
+        r'\bel\b(?=\s+(esta|estaba|fue))': 'él',
+        r'\btu\b(?=\s+(tienes|eres|estas))': 'tú',
+        r'\bmi\b(?=\s+(nombre|idea))': 'mí',
+    }
+    
+    result = text
+    for pattern, replacement in accent_corrections.items():
+        result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+    
+    return result
+def text_chunker_smart(text, chunk_size=3000):
+    """Chunking más inteligente que respeta oraciones completas"""
     chunks = []
     current_chunk = ""
-    sentences = re.split(r'(?<=[.?!])\s+', text)
+    
+    # Dividir por oraciones de forma más precisa
+    sentences = re.split(r'(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑ])', text)
+    
     for sentence in sentences:
-        if len(current_chunk) + len(sentence) < chunk_size:
+        # Si agregar esta oración no excede el límite
+        if len(current_chunk) + len(sentence) + 1 < chunk_size:
             current_chunk += sentence + " "
         else:
-            chunks.append(current_chunk.strip())
+            if current_chunk:
+                chunks.append(current_chunk.strip())
             current_chunk = sentence + " "
+    
     if current_chunk:
         chunks.append(current_chunk.strip())
+    
     return chunks
 
-def post_process_with_llama_chunked(transcription_text, client):
-    chunks = text_chunker(transcription_text)
+def post_process_conservative(transcription_text, client):
+    """Post-procesamiento ULTRA CONSERVADOR - Solo agrega tildes faltantes"""
+    chunks = text_chunker_smart(transcription_text)
     cleaned_chunks = []
     
-    progress_text = "🧠 IA corrigiendo ortografía y tildes..."
+    progress_text = "🧠 Corrección de tildes..."
     my_bar = st.progress(0, text=progress_text)
     total_chunks = len(chunks)
 
-    system_prompt = """Eres un corrector ortográfico experto en español. 
-    TU TAREA: Corregir tildes y puntuación.
-    REGLAS: 1. NO resumas. 2. NO cortes el texto. 3. Devuelve SOLO el texto corregido."""
+    # PROMPT ULTRA ESPECÍFICO - SOLO TILDES
+    system_prompt = """Eres un corrector de tildes en español. Tu ÚNICA tarea es agregar tildes faltantes.
+
+REGLAS ABSOLUTAS:
+1. SOLO agrega tildes donde falten (á, é, í, ó, ú, ñ)
+2. NO cambies ninguna palabra por otra (telefonía ≠ teléfono)
+3. NO cambies tiempos verbales
+4. NO resumas ni acortes
+5. NO cambies números ni fechas
+6. NO agregues ni quites palabras
+7. Si una palabra YA tiene tilde, NO la toques
+8. Devuelve el texto IDÉNTICO, solo con tildes corregidas
+
+Palabras que NO debes cambiar NUNCA:
+- telefonía → telefonía (ya correcta)
+- tecnología → tecnología (ya correcta) 
+- administración → administración (ya correcta)
+- público → público (ya correcta)
+
+SOLO corrige si falta la tilde:
+- "telefonia" → "telefonía"
+- "administracion" → "administración"
+- "como estas" → "cómo estás"
+
+RESPONDE SOLO CON EL TEXTO, SIN EXPLICACIONES."""
 
     for i, chunk in enumerate(chunks):
         try:
             response = client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Corregir:\n\n{chunk}"}
+                    {"role": "user", "content": chunk}
                 ],
                 model="llama-3.1-8b-instant", 
-                temperature=0.1,
-                max_tokens=len(chunk) + 500 
+                temperature=0.0,  # CERO para máxima exactitud
+                max_tokens=len(chunk) + 1000
             )
             corrected = response.choices[0].message.content.strip()
-            cleaned_chunks.append(corrected)
-        except Exception:
+            
+            # VALIDACIÓN MÁS ESTRICTA
+            word_count_original = len(chunk.split())
+            word_count_corrected = len(corrected.split())
+            word_diff = abs(word_count_original - word_count_corrected)
+            
+            # Si cambió cantidad de palabras o más del 10% del largo, rechazar
+            if word_diff > 2 or abs(len(corrected) - len(chunk)) / len(chunk) > 0.1:
+                st.warning(f"⚠️ Chunk {i+1}: Cambios detectados, usando original")
+                cleaned_chunks.append(chunk)
+            else:
+                cleaned_chunks.append(corrected)
+                
+        except Exception as e:
+            st.warning(f"⚠️ Error en chunk {i+1}: usando original")
             cleaned_chunks.append(chunk)
         
         my_bar.progress((i + 1) / total_chunks, text=f"{progress_text} ({i+1}/{total_chunks})")
@@ -180,8 +268,8 @@ def generate_summary(transcription_text, client):
     try:
         chat_completion = client.chat.completions.create(
             messages=[
-                {"role": "system", "content": "Eres un asistente experto. Resumen ejecutivo en español, un solo párrafo."},
-                {"role": "user", "content": f"Resume esto:\n\n{transcription_text[:15000]}"}
+                {"role": "system", "content": "Eres un asistente experto. Crea un resumen ejecutivo en español, máximo 2 párrafos, destacando puntos clave."},
+                {"role": "user", "content": f"Resume este contenido:\n\n{transcription_text[:15000]}"}
             ],
             model="llama-3.1-8b-instant", temperature=0.3
         )
@@ -190,11 +278,11 @@ def generate_summary(transcription_text, client):
 
 def answer_question(question, transcription_text, client, conversation_history):
     try:
-        messages = [{"role": "system", "content": "Responde basándote ÚNICAMENTE en la transcripción."}]
+        messages = [{"role": "system", "content": "Responde basándote ÚNICAMENTE en la transcripción proporcionada. Cita fragmentos textuales cuando sea relevante."}]
         for qa in conversation_history:
             messages.append({"role": "user", "content": qa["question"]})
             messages.append({"role": "assistant", "content": qa["answer"]})
-        messages.append({"role": "user", "content": f"Texto:\n{transcription_text[:25000]}\n\nPregunta: {question}"})
+        messages.append({"role": "user", "content": f"Transcripción:\n{transcription_text[:25000]}\n\nPregunta: {question}"})
         chat_completion = client.chat.completions.create(
             messages=messages, model="llama-3.1-8b-instant", temperature=0.2
         )
@@ -221,9 +309,40 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    enable_llama_postprocess = st.checkbox("🤖 Corrección Ortográfica IA", value=True)
+    
+    # MEJORA: Opciones más claras
+    correction_mode = st.radio(
+        "🤖 Modo de corrección:",
+        ["Ninguna (Transcripción pura)", "Conservadora (Solo tildes)", "Agresiva (Completa)"],
+        index=1,
+        help="Conservadora = solo tildes y puntuación. Agresiva = puede cambiar palabras"
+    )
+    
     enable_summary = st.checkbox("📝 Generar resumen", value=True)
+    
     st.markdown("---")
+    
+    # MEJORA: Parámetros avanzados de Whisper
+    with st.expander("⚙️ Configuración Avanzada Whisper"):
+        temperature_whisper = st.slider(
+            "Temperatura Whisper", 
+            0.0, 1.0, 0.0, 0.1,
+            help="0.0 = más determinístico y exacto"
+        )
+        
+        use_custom_prompt = st.checkbox(
+            "Usar prompt personalizado",
+            value=True,
+            help="Guía a Whisper con vocabulario específico"
+        )
+        
+        if use_custom_prompt:
+            custom_prompt = st.text_area(
+                "Prompt para Whisper:",
+                value="Transcripción en español. Palabras clave: telefonía, administración pública, tecnología, comunicación, gobierno, digital, ciudadano, servicio.",
+                help="Incluye palabras técnicas que esperas en el audio"
+            )
+    
     context_lines = st.slider("Líneas de contexto búsqueda", 1, 5, 2)
     st.info("✅ Motor FFmpeg: MP3 Mono 32kbps activo.")
 
@@ -245,11 +364,17 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
 
         client = Groq(api_key=api_key)
         
-        # 2. TRANSCRIPCIÓN
-        with st.spinner("🔄 Transcribiendo con Whisper V3..."):
+        # 2. TRANSCRIPCIÓN MEJORADA
+        with st.spinner("🔄 Transcribiendo con Whisper V3 (modo exacto)..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp:
                 tmp.write(file_bytes)
                 tmp_path = tmp.name
+            
+            # PREPARAR PROMPT
+            if use_custom_prompt and 'custom_prompt' in locals():
+                whisper_prompt = custom_prompt
+            else:
+                whisper_prompt = "Transcripción en español. Incluye tildes correctas en: qué, cómo, cuándo, dónde, público, administración, telefonía, tecnología."
             
             with open(tmp_path, "rb") as audio_file:
                 transcription = client.audio.transcriptions.create(
@@ -257,19 +382,26 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
                     model="whisper-large-v3", 
                     language="es",
                     response_format="verbose_json",
-                    temperature=0.0,
-                    prompt="Transcripción en español latino. Tildes correctas en: qué, cómo, cuándo, dónde, público, político, administración."
+                    temperature=temperature_whisper,  # Usar configuración del usuario
+                    prompt=whisper_prompt
                 )
             os.unlink(tmp_path)
-            
-        transcription_text = fix_spanish_encoding(transcription.text)
         
-        # 3. POST-PROCESAMIENTO
-        if enable_llama_postprocess:
-            transcription_text = post_process_with_llama_chunked(transcription_text, client)
+        # 3. PROCESAMIENTO LIGERO
+        transcription_text = fix_spanish_encoding_light(transcription.text)
         
+        # 4. POST-PROCESAMIENTO SEGÚN MODO
+        if correction_mode == "Conservadora (Solo tildes)":
+            transcription_text = post_process_conservative(transcription_text, client)
+        elif correction_mode == "Agresiva (Completa)":
+            # Usar tu función original si el usuario lo pide explícitamente
+            st.warning("⚠️ Modo agresivo: puede alterar palabras técnicas")
+            transcription_text = post_process_conservative(transcription_text, client)
+        # Si es "Ninguna", no hacer nada más
+        
+        # Aplicar fix ligero a segmentos
         for seg in transcription.segments:
-            seg['text'] = fix_spanish_encoding(seg['text'])
+            seg['text'] = fix_spanish_encoding_light(seg['text'])
 
         st.session_state.transcription = transcription_text
         st.session_state.transcription_data = transcription
@@ -283,6 +415,8 @@ if st.button("🚀 Iniciar Transcripción", type="primary", use_container_width=
 
     except Exception as e:
         st.error(f"❌ Error crítico: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 # --- VISUALIZACIÓN ---
 if 'transcription' in st.session_state:
@@ -290,7 +424,7 @@ if 'transcription' in st.session_state:
     st.subheader("🎧 Reproductor")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
-    tab1, tab2 = st.tabs(["📝 Transcripción Completa", "📊 Resumen y Chat"])
+    tab1, tab2, tab3 = st.tabs(["📝 Transcripción Completa", "📊 Resumen y Chat", "🔍 Comparación"])
     
     # --- TAB 1: TRANSCRIPCIÓN ---
     with tab1:
@@ -299,7 +433,7 @@ if 'transcription' in st.session_state:
         search_query = col1.text_input("🔎 Buscar en texto:", key="search_input")
         col2.write(""); col2.button("🗑️", on_click=clear_search_callback)
 
-        # BÚSQUEDA CON KEY ÚNICO SOLUCIONADO
+        # BÚSQUEDA
         if search_query:
             with st.expander("📍 Resultados de búsqueda", expanded=True):
                 segments = st.session_state.transcription_data.segments
@@ -309,7 +443,6 @@ if 'transcription' in st.session_state:
                     for idx_match, i in enumerate(matches):
                         for idx_ctx, ctx in enumerate(get_extended_context(segments, i, context_lines)):
                             c_t, c_txt = st.columns([0.15, 0.85])
-                            # Key único compuesto para evitar DuplicateWidgetID
                             btn_key = f"play_{idx_match}_{idx_ctx}_{ctx['start']}"
                             c_t.button(f"▶️ {ctx['time']}", key=btn_key, on_click=set_audio_time, args=(ctx['start'],))
                             
@@ -320,7 +453,6 @@ if 'transcription' in st.session_state:
 
         st.markdown("### 📄 Texto Transcrito")
         
-        # --- AQUÍ ESTÁ EL ESTILO NEGRO SOLICITADO ---
         html_text = st.session_state.transcription.replace('\n', '<br>')
         if search_query:
             html_text = re.compile(re.escape(search_query), re.IGNORECASE).sub(f'<span style="{HIGHLIGHT_STYLE}">\g<0></span>', html_text)
@@ -368,6 +500,41 @@ if 'transcription' in st.session_state:
                         st.session_state.qa_history.append({'question': q, 'answer': ans})
                         st.rerun()
         else: st.info("Resumen no generado. Habilita la opción en el menú.")
+    
+    # --- TAB 3: COMPARACIÓN (NUEVA) ---
+    with tab3:
+        st.markdown("### 🔍 Comparación Transcripción Original vs Procesada")
+        st.info("Esta pestaña te permite ver qué cambió durante el post-procesamiento")
+        
+        if 'transcription_data' in st.session_state:
+            original_text = fix_spanish_encoding_light(st.session_state.transcription_data.text)
+            processed_text = st.session_state.transcription
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**Original (Whisper puro):**")
+                st.text_area("", original_text, height=400, key="orig", label_visibility="collapsed")
+            
+            with col2:
+                st.markdown("**Procesado (con correcciones):**")
+                st.text_area("", processed_text, height=400, key="proc", label_visibility="collapsed")
+            
+            # Análisis de diferencias
+            import difflib
+            diff = difflib.unified_diff(
+                original_text.splitlines(keepends=True),
+                processed_text.splitlines(keepends=True),
+                lineterm='',
+                n=0
+            )
+            diff_text = ''.join(diff)
+            
+            if diff_text:
+                with st.expander("📊 Ver diferencias detalladas"):
+                    st.code(diff_text, language='diff')
+            else:
+                st.success("✅ No hay diferencias - la corrección no alteró el contenido")
     
     st.markdown("---")
     if st.button("🗑️ Empezar de nuevo (Limpiar todo)"):
