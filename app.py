@@ -96,95 +96,10 @@ def remove_phrase_loops(text):
     
     return text
 
-# --- MEJORA ADICIONAL: DICCIONARIO FONÉTICO ESPAÑOL ---
-PHONETIC_CORRECTIONS = {
-    # Errores comunes de Whisper con español colombiano/latinoamericano
-    r'\bpiéjese\b': 'fíjese',
-    r'\bpiégese\b': 'fíjese',
-    r'\bfígese\b': 'fíjese',
-    r'\bpues\s+si\b': 'pues sí',
-    r'\bestá\s+hay\b': 'está ahí',
-    r'\bahí\s+hay\b': 'ahí hay',
-    r'\bvéalo\b': 'véalo',
-    r'\bvéala\b': 'véala',
-    r'\boiga\b': 'oiga',
-    r'\boido\b': 'oído',
-    r'\bdijistes\b': 'dijiste',
-    r'\bhacistes\b': 'hiciste',
-    r'\btrájeron\b': 'trajeron',
-    r'\bhaiga\b': 'haya',
-    r'\bnadies\b': 'nadie',
-    r'\byendo\b': 'yendo',
-    r'\bpá\b': 'para',
-    r'\bpa\s+': 'para ',
-    r'\bto\b': 'todo',
-    r'\bnojoda\b': 'no joda',
-    r'\bquiubo\b': 'qué hubo',
-    r'\bmijo\b': 'mi hijo',
-    r'\bmija\b': 'mi hija',
-    r'\bel\s+llave\b': 'el llaves',  # Colombianismo
-    r'\bparce\b': 'parce',  # Ya está bien, pero lo mantenemos
-    r'\bchinear\b': 'chinear',  # Colombianismo válido
-}
-
-def fix_encoding_errors(text):
-    """
-    Repara caracteres Unicode corruptos y encoding mal interpretado.
-    """
-    if not text: return ""
-    
-    # Reemplazar el carácter de reemplazo Unicode
-    text = text.replace('�', '')
-    
-    # Patrones comunes de encoding roto
-    encoding_fixes = {
-        'Ã±': 'ñ',
-        'Ã¡': 'á',
-        'Ã©': 'é',
-        'Ã­': 'í',
-        'Ã³': 'ó',
-        'Ãº': 'ú',
-        'Ã': 'Ñ',
-        'Ã': 'Á',
-        'Ã‰': 'É',
-        'Ã': 'Í',
-        'Ã"': 'Ó',
-        'Ãš': 'Ú',
-        'Â¿': '¿',
-        'Â¡': '¡',
-    }
-    
-    for broken, fixed in encoding_fixes.items():
-        text = text.replace(broken, fixed)
-    
-    # Eliminar caracteres de control invisibles
-    text = re.sub(r'[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-    
-    # Normalizar espacios no estándar
-    text = re.sub(r'[\u00a0\u1680\u2000-\u200b\u202f\u205f\u3000]', ' ', text)
-    
-    return text
-
-def apply_phonetic_corrections(text):
-    """
-    Corrige errores fonéticos comunes de Whisper en español.
-    """
-    corrected = text
-    for pattern, replacement in PHONETIC_CORRECTIONS.items():
-        corrected = re.sub(pattern, replacement, corrected, flags=re.IGNORECASE)
-    return corrected
-
 # --- MEJORA 2: LIMPIEZA MEJORADA ANTI-ALUCINACIONES ---
-def clean_whisper_hallucinations(text, apply_phonetic=True):
+def clean_whisper_hallucinations(text):
     """Limpia frases inventadas comunes en silencios y bucles."""
     if not text: return ""
-    
-    # PASO 1: Reparar encoding (siempre activo)
-    text = fix_encoding_errors(text)
-    
-    # PASO 2: Aplicar correcciones fonéticas (opcional)
-    if apply_phonetic:
-        text = apply_phonetic_corrections(text)
     
     # Patrones de basura que Whisper V3 suele inventar
     junk_patterns = [
@@ -219,7 +134,7 @@ def clean_whisper_hallucinations(text, apply_phonetic=True):
     return cleaned.strip()
 
 # --- MEJORA 4: FILTRADO INTELIGENTE DE SEGMENTOS ---
-def filter_segments_data(segments, apply_phonetic=True):
+def filter_segments_data(segments):
     """
     Limpia la data de segmentos con filtros más inteligentes.
     Evita perder información valiosa pero elimina basura real.
@@ -229,7 +144,7 @@ def filter_segments_data(segments, apply_phonetic=True):
     consecutive_short = 0
     
     for seg in segments:
-        txt = clean_whisper_hallucinations(seg['text'], apply_phonetic)
+        txt = clean_whisper_hallucinations(seg['text'])
         
         # Filtros de calidad más permisivos
         if len(txt) == 0: 
@@ -306,20 +221,16 @@ def surgical_correction(text, client):
     progress_text = "🧠 Aplicando corrección quirúrgica (solo tildes)..."
     my_bar = st.progress(0, text=progress_text)
     
-    system_prompt = """Eres un corrector ortográfico estricto para español.
-TU MISIÓN:
-1. Poner tildes faltantes (telefonía, tecnología, etc.)
-2. Corregir errores fonéticos comunes: "piéjese" → "fíjese", "oiga" → "oiga", "trájeron" → "trajeron"
-
+    system_prompt = """Eres un corrector ortográfico estricto.
+TU ÚNICA MISIÓN: Poner tildes faltantes en español.
 PROHIBIDO:
 - Cambiar palabras (ej: 'telefono' -> 'móvil' PROHIBIDO).
-- Resumir o eliminar texto.
+- Resumir.
+- Eliminar texto.
 - Cambiar puntuación técnica.
-- Modificar nombres propios (marcas, lugares, personas).
 
-Ejemplo:
-Entrada: "la telefonia y piéjese que hay tecnologia"
-Salida: "la telefonía y fíjese que hay tecnología"
+Entrada: "la telefonia y la tecnologia"
+Salida: "la telefonía y la tecnología"
 
 Si la entrada ya está bien, devuélvela IDÉNTICA. Solo responde con el texto corregido."""
 
@@ -350,42 +261,6 @@ Si la entrada ya está bien, devuélvela IDÉNTICA. Solo responde con el texto c
     my_bar.empty()
     return " ".join(final_parts)
 
-def analyze_transcription_quality(text, segments):
-    """
-    Analiza la calidad de la transcripción y retorna métricas.
-    """
-    issues = []
-    
-    # Detectar caracteres corruptos restantes
-    if '�' in text or 'Ã' in text:
-        issues.append("encoding")
-    
-    # Detectar repeticiones excesivas
-    words = text.lower().split()
-    word_freq = Counter(words)
-    most_common = word_freq.most_common(10)
-    if most_common and most_common[0][1] > len(words) * 0.05:  # Más del 5%
-        issues.append("repetition")
-    
-    # Detectar segmentos muy cortos (posible pérdida de info)
-    short_segments = sum(1 for seg in segments if len(seg['text']) < 5)
-    if short_segments > len(segments) * 0.3:  # Más del 30%
-        issues.append("short_segments")
-    
-    # Calcular densidad de palabras por minuto (WPM)
-    if segments:
-        duration_minutes = segments[-1]['end'] / 60
-        wpm = len(words) / duration_minutes if duration_minutes > 0 else 0
-    else:
-        wpm = 0
-    
-    return {
-        'issues': issues,
-        'wpm': round(wpm, 1),
-        'most_common_word': most_common[0] if most_common else ('N/A', 0),
-        'short_segments_pct': round(short_segments / len(segments) * 100, 1) if segments else 0
-    }
-
 # --- UTILIDADES ---
 def create_copy_button(text_to_copy):
     text_json = json.dumps(text_to_copy)
@@ -413,28 +288,6 @@ def export_to_srt(segments):
         e_str = f"{e.seconds//3600:02}:{(e.seconds//60)%60:02}:{e.seconds%60:02},{e.microseconds//1000:03}"
         srt.append(f"{i}\n{s_str} --> {e_str}\n{seg['text']}\n")
     return "\n".join(srt)
-
-def export_to_json(segments, full_text):
-    """Exporta la transcripción en formato JSON con timestamps."""
-    data = {
-        'full_text': full_text,
-        'segments': [
-            {
-                'id': i,
-                'start': seg['start'],
-                'end': seg['end'],
-                'text': seg['text'],
-                'timestamp': format_timestamp(seg['start'])
-            }
-            for i, seg in enumerate(segments)
-        ],
-        'metadata': {
-            'total_segments': len(segments),
-            'total_words': len(full_text.split()),
-            'duration_seconds': segments[-1]['end'] if segments else 0
-        }
-    }
-    return json.dumps(data, ensure_ascii=False, indent=2)
 
 # --- MEJORA 6: OPTIMIZACIÓN AUDIO CON NORMALIZACIÓN ---
 def optimize_audio_robust(file_bytes, filename):
@@ -498,46 +351,14 @@ with st.sidebar:
     temperature = st.slider("Temperatura Whisper", 0.0, 0.5, 0.1, 0.05, 
                            help="0.0 = Muy determinístico (puede repetir). 0.1-0.2 = Balance óptimo. 0.3+ = Más creativo pero menos preciso.")
     
-    # Opción para activar/desactivar correcciones fonéticas
-    enable_phonetic = st.checkbox("Correcciones fonéticas automáticas", value=True,
-                                   help="Corrige 'piéjese'→'fíjese', 'oiga'→'oiga', etc.")
-    
     st.markdown("---")
-    st.info("✅ Mejoras activas:\n- Normalización de audio\n- Detección de bucles\n- Filtrado inteligente\n- Reparación de encoding\n- Diccionario fonético español")
-    
-    st.markdown("---")
-    with st.expander("🛠️ Solución de Problemas"):
-        st.markdown("""
-        **Si aún hay repeticiones:**
-        - Baja la temperatura a 0.05
-        - Revisa que el audio no tenga eco
-        
-        **Si faltan palabras:**
-        - Sube la temperatura a 0.15-0.2
-        - Verifica que el audio sea claro
-        
-        **Si hay "�" en el texto:**
-        - Automáticamente reparado
-        - Si persiste, el audio original tiene problemas
-        
-        **Si dice palabras raras:**
-        - Activa "Correcciones fonéticas"
-        - Usa el modo "Quirúrgico" después
-        """)
+    st.info("✅ Mejoras activas:\n- Normalización de audio\n- Detección de bucles\n- Filtrado inteligente\n- Temperatura ajustable")
 
 uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov", "flac", "aac"])
 
 if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
     client = Groq(api_key=api_key)
-    
-    # Validación inicial del archivo
-    if uploaded_file.size == 0:
-        st.error("❌ El archivo está vacío. Por favor, sube un archivo de audio válido.")
-        st.stop()
-    
-    if uploaded_file.size > 500 * 1024 * 1024:  # 500 MB
-        st.warning("⚠️ Archivo muy grande (>500MB). La transcripción puede tardar varios minutos.")
     
     try:
         # 1. OPTIMIZAR CON NORMALIZACIÓN
@@ -573,33 +394,13 @@ y sin inventar contenido en silencios. Usa puntuación natural española."""
             st.sidebar.success(f"✅ Segmentos detectados: {len(transcription_data.segments)}")
 
         # 3. LIMPIEZA ANTI-ALUCINACIONES MEJORADA
-        raw_text_cleaned = clean_whisper_hallucinations(transcription_data.text, enable_phonetic)
-        segments_cleaned = filter_segments_data(transcription_data.segments, enable_phonetic)
+        raw_text_cleaned = clean_whisper_hallucinations(transcription_data.text)
+        segments_cleaned = filter_segments_data(transcription_data.segments)
         
         # Diagnóstico de limpieza
         removed = len(transcription_data.segments) - len(segments_cleaned)
         if removed > 0:
             st.sidebar.info(f"🧹 Segmentos filtrados: {removed}")
-        
-        # Detectar y reportar problemas de encoding
-        if '�' in transcription_data.text:
-            st.sidebar.warning("⚠️ Se detectaron y repararon problemas de encoding")
-        
-        # Analizar calidad de transcripción
-        quality = analyze_transcription_quality(raw_text_cleaned, segments_cleaned)
-        st.session_state.quality_report = quality  # Guardar para el reporte
-        
-        if quality['issues']:
-            issues_text = {
-                'encoding': '🔤 Problemas de encoding reparados',
-                'repetition': '🔁 Repeticiones detectadas y limpiadas',
-                'short_segments': '⚠️ Muchos segmentos cortos detectados'
-            }
-            for issue in quality['issues']:
-                st.sidebar.info(issues_text.get(issue, issue))
-        
-        # Mostrar métricas de calidad
-        st.sidebar.metric("📊 Palabras/minuto", quality['wpm'])
         
         # 4. CORRECCIÓN OPCIONAL
         if mode == "Quirúrgico (Solo Tildes)":
@@ -624,17 +425,10 @@ if 'transcription_text' in st.session_state:
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
     # Estadísticas rápidas
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     col1.metric("📝 Palabras", len(st.session_state.transcription_text.split()))
     col2.metric("⏱️ Segmentos", len(st.session_state.segments))
     col3.metric("🔤 Caracteres", len(st.session_state.transcription_text))
-    
-    # Calcular y mostrar duración si está disponible
-    if st.session_state.segments:
-        duration_min = st.session_state.segments[-1]['end'] / 60
-        col4.metric("⏰ Duración", f"{duration_min:.1f} min")
-    else:
-        col4.metric("⏰ Duración", "N/A")
     
     tab1, tab2 = st.tabs(["📝 Transcripción & Búsqueda", "💬 Chat con Audio"])
     
@@ -667,31 +461,10 @@ if 'transcription_text' in st.session_state:
         st.markdown("### 📄 Texto Completo")
         st.text_area("Copia el texto aquí:", st.session_state.transcription_text, height=600, label_visibility="collapsed")
         
-        st.markdown("### 💾 Exportar")
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.download_button("📄 TXT", st.session_state.transcription_text, "transcripcion.txt", use_container_width=True)
-        c2.download_button("🎬 SRT", export_to_srt(st.session_state.segments), "subtitulos.srt", use_container_width=True)
-        c3.download_button("📊 JSON", export_to_json(st.session_state.segments, st.session_state.transcription_text), "transcripcion.json", use_container_width=True)
-        
-        # Generar reporte de diagnóstico
-        if 'quality_report' in st.session_state:
-            quality = st.session_state.quality_report
-            report_text = f"""REPORTE DE TRANSCRIPCIÓN
-=====================================
-📊 Estadísticas:
-- Palabras totales: {len(st.session_state.transcription_text.split())}
-- Segmentos: {len(st.session_state.segments)}
-- Palabras por minuto: {quality['wpm']}
-- Palabra más frecuente: "{quality['most_common_word'][0]}" ({quality['most_common_word'][1]} veces)
-
-🔧 Correcciones Aplicadas:
-{chr(10).join(['- ' + {'encoding': 'Reparación de encoding UTF-8', 'repetition': 'Eliminación de repeticiones', 'short_segments': 'Filtrado de segmentos cortos'}.get(issue, issue) for issue in quality['issues']]) if quality['issues'] else '- Ninguna (transcripción limpia)'}
-
-✅ Calidad: {'Excelente' if not quality['issues'] else 'Buena (con correcciones)'}
-"""
-            c4.download_button("📋 Reporte", report_text, "reporte.txt", use_container_width=True)
-        
-        with c5: create_copy_button(st.session_state.transcription_text)
+        c1, c2, c3 = st.columns([1,1,1])
+        c1.download_button("💾 TXT", st.session_state.transcription_text, "transcripcion.txt", use_container_width=True)
+        c2.download_button("💾 SRT (Subtítulos)", export_to_srt(st.session_state.segments), "subs.srt", use_container_width=True)
+        with c3: create_copy_button(st.session_state.transcription_text)
 
     # --- TAB 2: CHAT ---
     with tab2:
