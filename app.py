@@ -7,7 +7,6 @@ import re
 import subprocess
 import streamlit.components.v1 as components
 from datetime import timedelta
-import difflib
 
 # --- LÓGICA DE AUTENTICACIÓN ---
 if "password_correct" not in st.session_state:
@@ -27,8 +26,8 @@ if not st.session_state.password_correct:
     st.markdown("""
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
-        <h2>Transcriptor Pro - Ultimate</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>Transcripción Exacta + Chat + Corrección Quirúrgica</p>
+        <h2>Transcriptor Pro - Edición Exacta</h2>
+        <p style='color: #666; margin-bottom: 2rem;'>Sin resúmenes, sin inventos. Solo tu texto y chat.</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -41,7 +40,7 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN APP ---
-st.set_page_config(page_title="Transcriptor Pro V10", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro V11", page_icon="🎙️", layout="wide")
 
 # --- ESTADO E INICIALIZACIÓN ---
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
@@ -65,7 +64,7 @@ def clean_whisper_hallucinations(text):
     """Limpia frases inventadas comunes en silencios y bucles."""
     if not text: return ""
     
-    # 1. Patrones de "créditos" que Whisper inventa
+    # Patrones de basura que Whisper V3 suele inventar
     junk_patterns = [
         r"Subtítulos realizados por.*",
         r"Comunidad de editores.*",
@@ -81,7 +80,7 @@ def clean_whisper_hallucinations(text):
     for pattern in junk_patterns:
         cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
     
-    # 2. Eliminar repeticiones Bucle (ej: "hola hola hola")
+    # Eliminar repeticiones Bucle (ej: "hola hola hola")
     cleaned = re.sub(r'\b(\w+)( \1\b)+', r'\1', cleaned, flags=re.IGNORECASE)
     
     return cleaned.strip()
@@ -104,7 +103,7 @@ def filter_segments_data(segments):
         
     return clean_segments
 
-# --- FUNCIONES DE CORRECCIÓN (LLM) ---
+# --- FUNCIONES DE CORRECCIÓN QUIRÚRGICA ---
 def text_chunker_smart(text, chunk_size=2500):
     """Corta por oraciones para no romper contexto."""
     sentences = re.split(r'(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑ])', text)
@@ -121,7 +120,10 @@ def text_chunker_smart(text, chunk_size=2500):
     return chunks
 
 def surgical_correction(text, client):
-    """Corrección estricta: solo tildes. Si cambia mucho el texto, se descarta."""
+    """
+    Corrección estricta: solo tildes. 
+    Safety Check: Si cambia mucho el texto (longitud), se descarta el cambio.
+    """
     chunks = text_chunker_smart(text)
     final_parts = []
     
@@ -143,7 +145,6 @@ Si la entrada ya está bien, devuélvela IDÉNTICA. Solo responde con el texto c
 
     for i, chunk in enumerate(chunks):
         try:
-            # Reintentos básicos
             response = client.chat.completions.create(
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": chunk}],
                 model="llama-3.1-8b-instant",
@@ -158,7 +159,7 @@ Si la entrada ya está bien, devuélvela IDÉNTICA. Solo responde con el texto c
             ratio = len_diff / len(chunk) if len(chunk) > 0 else 0
             
             if ratio > 0.10: 
-                # Fallback al original
+                # Fallback al original si el cambio es sospechoso
                 final_parts.append(chunk)
             else:
                 final_parts.append(corrected)
@@ -199,8 +200,12 @@ def export_to_srt(segments):
         srt.append(f"{i}\n{s_str} --> {e_str}\n{seg['text']}\n")
     return "\n".join(srt)
 
-# --- OPTIMIZACIÓN AUDIO ---
+# --- OPTIMIZACIÓN AUDIO (FFMPEG) ---
 def optimize_audio_robust(file_bytes, filename):
+    """
+    Convierte cualquier entrada a MP3 16kHz Mono 32kbps.
+    Esto es CRUCIAL para que Whisper no alucine.
+    """
     file_ext = os.path.splitext(filename)[1] or ".mp3"
     with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp:
         tmp.write(file_bytes)
@@ -208,30 +213,23 @@ def optimize_audio_robust(file_bytes, filename):
     
     output_path = input_path + "_opt.mp3"
     try:
-        # 16kHz Mono es lo que Whisper prefiere
+        # Comando optimizado para voz
         subprocess.run(["ffmpeg", "-y", "-i", input_path, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "32k", "-f", "mp3", output_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         with open(output_path, 'rb') as f: new_bytes = f.read()
         os.unlink(input_path); os.unlink(output_path)
         return new_bytes, True
     except:
+        # Si falla ffmpeg, usamos el original pero advertimos
         if os.path.exists(input_path): os.unlink(input_path)
         return file_bytes, False
 
-# --- CHAT / RESUMEN ---
-def generate_summary(text, client):
-    try:
-        return client.chat.completions.create(
-            messages=[{"role": "system", "content": "Resumen ejecutivo en español. Máximo 2 párrafos. Puntos clave."}, {"role": "user", "content": text[:15000]}],
-            model="llama-3.1-8b-instant"
-        ).choices[0].message.content
-    except Exception as e: return f"Error: {e}"
-
+# --- FUNCIÓN CHAT ---
 def answer_question(q, text, client, history):
-    msgs = [{"role": "system", "content": "Responde solo basándote en la transcripción."}]
+    msgs = [{"role": "system", "content": "Eres un asistente útil. Responde preguntas basándote ÚNICAMENTE en la transcripción proporcionada. Si no está en el texto, dilo."}]
     for item in history:
         msgs.append({"role": "user", "content": item['question']})
         msgs.append({"role": "assistant", "content": item['answer']})
-    msgs.append({"role": "user", "content": f"Contexto: {text[:20000]}\nPregunta: {q}"})
+    msgs.append({"role": "user", "content": f"Transcripción:\n{text[:25000]}\n\nPregunta: {q}"})
     try:
         return client.chat.completions.create(messages=msgs, model="llama-3.1-8b-instant").choices[0].message.content
     except Exception as e: return f"Error: {e}"
@@ -243,21 +241,21 @@ with st.sidebar:
     st.header("⚙️ Configuración")
     st.markdown("### Modos de Precisión")
     mode = st.radio("Nivel de Corrección:", ["Whisper Puro (Sin cambios)", "Quirúrgico (Solo Tildes)"], index=1)
-    enable_summary = st.checkbox("Generar Resumen", value=True)
     st.markdown("---")
-    st.info("✅ FFmpeg: Optimización automática activa (16kHz Mono).")
+    st.info("✅ Optimización FFmpeg activa para cada archivo.")
 
-uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg"])
+uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov"])
 
-if st.button("🚀 Iniciar", type="primary", disabled=not uploaded_file):
+if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
     client = Groq(api_key=api_key)
     
     try:
-        # 1. OPTIMIZAR
-        with st.spinner("🔄 Optimizando audio con FFmpeg..."):
-            audio_bytes, _ = optimize_audio_robust(uploaded_file.getvalue(), uploaded_file.name)
+        # 1. OPTIMIZAR (SIEMPRE SE EJECUTA)
+        with st.spinner("🔄 Optimizando audio con FFmpeg (16kHz Mono)..."):
+            audio_bytes, optimized = optimize_audio_robust(uploaded_file.getvalue(), uploaded_file.name)
             st.session_state.uploaded_audio_bytes = audio_bytes
+            if not optimized: st.warning("⚠️ No se pudo optimizar el audio, usando original.")
 
         # 2. TRANSCRIBIR (WHISPER)
         with st.spinner("📝 Transcribiendo (Modo Exacto)..."):
@@ -281,7 +279,7 @@ if st.button("🚀 Iniciar", type="primary", disabled=not uploaded_file):
         raw_text_cleaned = clean_whisper_hallucinations(transcription_data.text)
         segments_cleaned = filter_segments_data(transcription_data.segments)
         
-        # 4. CORRECCIÓN (OPCIONAL)
+        # 4. CORRECCIÓN (OPCIONAL PERO RECOMENDADA)
         if mode == "Quirúrgico (Solo Tildes)":
             final_text = surgical_correction(raw_text_cleaned, client)
         else:
@@ -289,25 +287,20 @@ if st.button("🚀 Iniciar", type="primary", disabled=not uploaded_file):
             
         # 5. ACTUALIZAR ESTADO
         st.session_state.transcription_text = final_text
-        st.session_state.raw_text_backup = raw_text_cleaned
         st.session_state.segments = segments_cleaned
-        
-        if enable_summary:
-            with st.spinner("📊 Generando resumen..."):
-                st.session_state.summary = generate_summary(final_text, client)
         
         st.balloons()
         st.rerun()
         
     except Exception as e:
-        st.error(f"❌ Error: {e}")
+        st.error(f"❌ Error crítico: {e}")
 
 # --- VISUALIZACIÓN ---
 if 'transcription_text' in st.session_state:
     st.markdown("---")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
-    tab1, tab2, tab3 = st.tabs(["📝 Transcripción & Búsqueda", "💬 Chat & Resumen", "🔍 Comparación (Cambios)"])
+    tab1, tab2 = st.tabs(["📝 Transcripción & Búsqueda", "💬 Chat con Audio"])
     
     # --- TAB 1: TRANSCRIPCIÓN INTERACTIVA ---
     with tab1:
@@ -340,48 +333,30 @@ if 'transcription_text' in st.session_state:
                 if not matches_found: st.warning("No se encontraron coincidencias.")
 
         st.markdown("### 📄 Texto Completo")
-        st.text_area("Copia el texto aquí:", st.session_state.transcription_text, height=500, label_visibility="collapsed")
+        st.text_area("Copia el texto aquí:", st.session_state.transcription_text, height=600, label_visibility="collapsed")
         
         c1, c2, c3 = st.columns([1,1,1])
         c1.download_button("💾 TXT", st.session_state.transcription_text, "transcripcion.txt", use_container_width=True)
         c2.download_button("💾 SRT (Subtítulos)", export_to_srt(st.session_state.segments), "subs.srt", use_container_width=True)
         with c3: create_copy_button(st.session_state.transcription_text)
 
-    # --- TAB 2: CHAT Y RESUMEN ---
+    # --- TAB 2: CHAT ---
     with tab2:
-        if 'summary' in st.session_state:
-            st.info("📌 Resumen Ejecutivo")
-            st.write(st.session_state.summary)
-            st.divider()
-        
         st.subheader("💬 Chat con el Audio")
+        st.caption("Haz preguntas específicas sobre la transcripción.")
+        
         for msg in st.session_state.qa_history:
             with st.chat_message("user"): st.write(msg['question'])
             with st.chat_message("assistant"): st.write(msg['answer'])
             
-        if prompt := st.chat_input("Pregunta algo sobre el audio..."):
+        if prompt := st.chat_input("Pregunta algo sobre el contenido..."):
             st.session_state.qa_history.append({"question": prompt, "answer": "..."})
-            with st.spinner("Pensando..."):
+            with st.spinner("Consultando transcripción..."):
                 ans = answer_question(prompt, st.session_state.transcription_text, Groq(api_key=api_key), st.session_state.qa_history[:-1])
                 st.session_state.qa_history[-1]["answer"] = ans
             st.rerun()
 
-    # --- TAB 3: COMPARACIÓN (SEGURIDAD) ---
-    with tab3:
-        st.markdown("### 🔍 Auditoría de Cambios")
-        st.caption("Verifica aquí qué tildes se agregaron. Si el corrector intentó cambiar palabras, verás diferencias grandes.")
-        
-        col_orig, col_new = st.columns(2)
-        with col_orig:
-            st.markdown("**Whisper Original (Limpio)**")
-            st.text_area("orig", st.session_state.raw_text_backup, height=300, disabled=True)
-        with col_new:
-            st.markdown("**Texto Final (Corregido)**")
-            st.text_area("final", st.session_state.transcription_text, height=300, disabled=True)
-            
-        diff = difflib.unified_diff(
-            st.session_state.raw_text_backup.splitlines(),
-            st.session_state.transcription_text.splitlines(),
-            lineterm=''
-        )
-        st.code('\n'.join(diff), language='diff')
+    st.markdown("---")
+    if st.button("🗑️ Limpiar Todo / Nuevo Archivo"):
+        st.session_state.clear()
+        st.rerun()
