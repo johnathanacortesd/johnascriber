@@ -29,7 +29,7 @@ if not st.session_state.password_correct:
     st.stop()
 
 # ========================= CONFIG =========================
-st.set_page_config(page_title="Transcriptor Pro V14", page_icon="microphone", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro V15", page_icon="microphone", layout="wide")
 
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
 if 'qa_history' not in st.session_state: st.session_state.qa_history = []
@@ -81,7 +81,7 @@ def ultra_safe_accent_correction(text, client):
     for i, chunk in enumerate(chunks):
         try:
             r = client.chat.completions.create(
-                model="llama-3.1-70b-versatile",   # ← modelo que SÍ existe y es rápido
+                model="llama-3.1-8b-instant",  # ← Cambiado a modelo estable y rápido
                 messages=[{"role":"system","content":prompt},{"role":"user","content":chunk}],
                 temperature=0.0,
                 max_tokens=len(chunk)+150
@@ -121,7 +121,9 @@ def optimize_audio(file_bytes, filename):
 # ========================= UTILIDADES =========================
 def format_time(sec):
     td = timedelta(seconds=int(sec))
-    return str(td)[2:-7] if td.days == 0 else "00:00:00"
+    hours, rem = divmod(td.seconds, 3600)
+    mins, secs = divmod(rem, 60)
+    return f"{hours:02d}:{mins:02d}:{secs:02d}"
 
 def export_srt(segments):
     lines = []
@@ -140,8 +142,8 @@ def create_copy_button(text):
     components.html(js, height=60)
 
 # ========================= INTERFAZ =========================
-st.title("Transcriptor Pro V14 – 100% Exacto")
-st.caption("Contexto en búsquedas • Sin prompt leak • Chat funcionando")
+st.title("Transcriptor Pro V15 – 100% Exacto")
+st.caption("Búsqueda con timestamp + contexto • Chat con modelo instantáneo • Sin leaks")
 
 with st.sidebar:
     mode = st.radio("Modo", ["Solo Whisper", "Tildes quirúrgicas (recomendado)"], index=1)
@@ -199,7 +201,7 @@ if 'transcription' in st.session_state:
 
     tab1, tab2 = st.tabs(["Transcripción + Búsqueda con contexto", "Chat"])
 
-    # ==================== BÚSQUEDA CON FRASE ANTERIOR Y SIGUIENTE ====================
+    # ==================== BÚSQUEDA CON TIMESTAMP + FRASE ANTERIOR Y SIGUIENTE ====================
     with tab1:
         query = st.text_input("Buscar palabra o frase", key="search_input")
         if query:
@@ -216,8 +218,8 @@ if 'transcription' in st.session_state:
                     for prev, seg, next_ in matches:
                         col1, col2 = st.columns([1, 9])
                         time_str = format_time(seg['start'])
-                        col1.button(f"Play {time_str}", key=f"play_{seg['start']}", on_click=set_audio_time, args=(seg['start'],))
-                        # Contexto bonito
+                        col1.button(f"▶️ {time_str}", key=f"play_{seg['start']}", on_click=set_audio_time, args=(seg['start'],))
+                        # Contexto: anterior + coincidencia destacada + siguiente
                         ctx = f"**{prev.strip()}** " if prev else ""
                         highlighted = re.sub(f"(?i){re.escape(query)}", f"**{query.upper()}**", seg['text'])
                         ctx += highlighted
@@ -235,7 +237,7 @@ if 'transcription' in st.session_state:
         d2.download_button("SRT", export_srt(st.session_state.segments), "subtitulos.srt")
         with d3: create_copy_button(st.session_state.transcription)
 
-    # ==================== CHAT FUNCIONANDO ====================
+    # ==================== CHAT CON MODELO INSTANTÁNEO ====================
     with tab2:
         for item in st.session_state.qa_history:
             st.chat_message("user").write(item["q"])
@@ -245,7 +247,7 @@ if 'transcription' in st.session_state:
             with st.spinner("Pensando..."):
                 try:
                     ans = client.chat.completions.create(
-                        model="llama-3.1-70b-versatile",   # ← modelo que EXISTE y es estable
+                        model="llama-3.1-8b-instant",  # ← Modelo instantáneo y estable (sin errores)
                         messages=[
                             {"role": "system", "content": "Responde solo con información que esté literalmente en la transcripción."},
                             {"role": "user", "content": f"Transcripción:\n{st.session_state.transcription[:28000]}\n\nPregunta: {prompt}"}
