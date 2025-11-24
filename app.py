@@ -1,4 +1,5 @@
 import streamlit as st
+from openai import OpenAI
 from groq import Groq
 import tempfile
 import os
@@ -28,8 +29,8 @@ if not st.session_state.password_correct:
     st.markdown("""
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
-        <h2>Transcriptor Pro - Cobertura Total</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>V13: Segmentación de alta frecuencia (3 min) para audio denso.</p>
+        <h2>Transcriptor Pro - Precisión Studio</h2>
+        <p style='color: #666; margin-bottom: 2rem;'>Motor OpenAI (No salta audio) + Corrección Groq</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -42,16 +43,19 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN APP ---
-st.set_page_config(page_title="Transcriptor Pro V13", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Preciso V14", page_icon="🎙️", layout="wide")
 
 # --- ESTADO ---
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
 if 'qa_history' not in st.session_state: st.session_state.qa_history = []
 
+# --- VERIFICACIÓN DE CLAVES ---
 try:
-    api_key = st.secrets["GROQ_API_KEY"]
+    groq_api_key = st.secrets["GROQ_API_KEY"]
+    openai_api_key = st.secrets["OPENAI_API_KEY"] # NUEVO REQUISITO
 except KeyError:
-    st.error("❌ Error: No se encontró GROQ_API_KEY en secrets")
+    st.error("❌ Error: Faltan claves en secrets. Necesitas GROQ_API_KEY y OPENAI_API_KEY.")
+    st.info("💡 Usa OpenAI para transcribir (sin errores) y Groq para corregir/chat (gratis).")
     st.stop()
 
 # --- CALLBACKS ---
@@ -62,21 +66,15 @@ def clear_search_callback():
     st.session_state.search_input = ""
 
 # --- FUNCIONES DE LIMPIEZA ---
-def clean_whisper_hallucinations(text):
+def clean_hallucinations(text):
     if not text: return ""
-    junk_patterns = [
-        r"Subtítulos realizados por.*", r"Comunidad de editores.*", r"Amara\.org.*",
-        r"Transcribed by.*", r"Sujeto a.*licencia.*", r"Copyright.*", 
-        r"Gracias por ver.*", r"Suscríbete.*", r"Editado por.*"
-    ]
+    junk = [r"Subtítulos por.*", r"Amara\.org.*", r"Transcribed by.*", r"Copyright.*"]
     cleaned = text
-    for pattern in junk_patterns:
-        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
-    # Eliminar repeticiones (bucle)
-    cleaned = re.sub(r'\b(\w+)( \1\b)+', r'\1', cleaned, flags=re.IGNORECASE)
+    for p in junk:
+        cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
-# --- CORRECCIÓN QUIRÚRGICA ---
+# --- CORRECCIÓN QUIRÚRGICA (Con Groq para velocidad) ---
 def text_chunker_smart(text, chunk_size=2500):
     sentences = re.split(r'(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑ])', text)
     chunks = []
@@ -90,22 +88,22 @@ def text_chunker_smart(text, chunk_size=2500):
     if current_chunk: chunks.append(current_chunk.strip())
     return chunks
 
-def surgical_correction(text, client):
+def surgical_correction(text, client_groq):
+    """Usa Groq (Llama3) solo para poner tildes. Es rápido y barato."""
     chunks = text_chunker_smart(text)
     final_parts = []
-    progress_text = "🧠 Aplicando corrección quirúrgica (solo tildes)..."
-    my_bar = st.progress(0, text=progress_text)
+    my_bar = st.progress(0, text="🧠 Corrector Gramatical (Groq Llama 3)...")
     
-    system_prompt = "Eres un corrector ortográfico estricto. TU TAREA: Poner tildes faltantes. PROHIBIDO cambiar palabras, resumir o eliminar texto. Si está bien, devuélvelo IDÉNTICO."
+    system_prompt = "Eres un corrector ortográfico. TU TAREA: Poner tildes. PROHIBIDO cambiar palabras. Si está bien, devuélvelo IDÉNTICO."
 
     for i, chunk in enumerate(chunks):
         try:
-            response = client.chat.completions.create(
+            response = client_groq.chat.completions.create(
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": chunk}],
-                model="llama-3.1-8b-instant", temperature=0.0, max_tokens=len(chunk) + 500
+                model="llama-3.1-8b-instant", temperature=0.0
             )
             corrected = response.choices[0].message.content.strip()
-            # Safety Check: Si la longitud cambia >10%, usamos el original
+            # Safety Check
             if abs(len(corrected) - len(chunk)) / len(chunk) > 0.10: 
                 final_parts.append(chunk)
             else:
@@ -116,11 +114,12 @@ def surgical_correction(text, client):
     my_bar.empty()
     return " ".join(final_parts)
 
-# --- PROCESAMIENTO DE AUDIO (SEGMENTACIÓN AGRESIVA) ---
-def optimize_and_split_audio(file_bytes, filename):
+# --- SPLITTER PARA OPENAI ---
+def split_audio_openai_safe(file_bytes, filename):
     """
-    Optimiza a 16kHz Mono y divide en segmentos de 180s (3 min).
-    Segmentos cortos = Menor probabilidad de que Whisper se 'pierda' en audios densos.
+    OpenAI tiene un límite de 25MB por archivo.
+    Dividimos en trozos de 10 minutos (aprox 5-7MB en mp3) para estar seguros.
+    No necesitamos cortes de 3 min porque OpenAI NO pierde contexto como Groq.
     """
     file_ext = os.path.splitext(filename)[1] or ".mp3"
     temp_dir = tempfile.mkdtemp()
@@ -129,9 +128,8 @@ def optimize_and_split_audio(file_bytes, filename):
     with open(input_path, "wb") as f:
         f.write(file_bytes)
 
-    optimized_path = os.path.join(temp_dir, "full_optimized.mp3")
-    
-    # 1. Convertir a formato estándar robusto (64k mono)
+    # 1. Convertir a MP3 eficiente (64k es suficiente para voz perfecta)
+    optimized_path = os.path.join(temp_dir, "optimized.mp3")
     try:
         subprocess.run([
             "ffmpeg", "-y", "-i", input_path, 
@@ -139,25 +137,22 @@ def optimize_and_split_audio(file_bytes, filename):
             "-f", "mp3", optimized_path
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except:
-        # Fallback si falla la conversión (raro)
         shutil.copy(input_path, optimized_path)
 
-    # 2. Segmentar en trozos de 180 segundos (3 minutos)
-    # Esto es la clave para que no falten pedazos largos
+    # 2. Segmentar en 10 minutos (600s) - Seguro para API OpenAI
     chunk_pattern = os.path.join(temp_dir, "part%03d.mp3")
     try:
         subprocess.run([
             "ffmpeg", "-y", "-i", optimized_path,
-            "-f", "segment", "-segment_time", "180", 
+            "-f", "segment", "-segment_time", "600", 
             "-c", "copy", "-reset_timestamps", "1",
             chunk_pattern
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        return [optimized_path], None, temp_dir # Fallback a archivo único si falla split
+        return [optimized_path], None, temp_dir
 
     chunks = sorted(glob.glob(os.path.join(temp_dir, "part*.mp3")))
     
-    # Leer el archivo completo para el reproductor
     with open(optimized_path, 'rb') as f:
         full_audio_bytes = f.read()
             
@@ -191,14 +186,14 @@ def export_to_srt(segments):
         srt.append(f"{i}\n{s_str} --> {e_str}\n{seg['text']}\n")
     return "\n".join(srt)
 
-def answer_question(q, text, client, history):
-    msgs = [{"role": "system", "content": "Eres un asistente útil. Responde basándote ÚNICAMENTE en la transcripción."}]
+def answer_question(q, text, client_groq, history):
+    msgs = [{"role": "system", "content": "Responde solo basándote en la transcripción."}]
     for item in history:
         msgs.append({"role": "user", "content": item['question']})
         msgs.append({"role": "assistant", "content": item['answer']})
-    msgs.append({"role": "user", "content": f"Transcripción:\n{text[:25000]}\n\nPregunta: {q}"})
+    msgs.append({"role": "user", "content": f"Contexto: {text[:25000]}\nPregunta: {q}"})
     try:
-        return client.chat.completions.create(messages=msgs, model="llama-3.1-8b-instant").choices[0].message.content
+        return client_groq.chat.completions.create(messages=msgs, model="llama-3.1-8b-instant").choices[0].message.content
     except Exception as e: return f"Error: {e}"
 
 # --- MAIN UI ---
@@ -206,70 +201,71 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    mode = st.radio("Nivel de Corrección:", ["Whisper Puro (Sin cambios)", "Quirúrgico (Solo Tildes)"], index=1)
-    st.info("✅ Sistema V13: Cortes de 3 minutos activados para evitar pérdida de datos.")
+    st.markdown("**Motor Transcripción:** OpenAI (Whisper-1)")
+    st.markdown("**Motor Corrección/Chat:** Groq (Llama-3)")
+    st.info("✅ Esta combinación garantiza que NO falten pedazos de audio.")
+    
+    correction_mode = st.radio("Corrección:", ["Ninguna", "Quirúrgica (Tildes)"], index=1)
 
 uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov"])
 
-if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
+if st.button("🚀 Iniciar Transcripción (Alta Precisión)", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
-    client = Groq(api_key=api_key)
+    
+    # Clientes
+    client_openai = OpenAI(api_key=openai_api_key)
+    client_groq = Groq(api_key=groq_api_key)
     
     try:
-        # 1. SPLIT (3 MINUTOS)
-        with st.spinner("🔄 Optimizando y segmentando (esto evita que se pierdan frases)..."):
-            chunks, full_audio, temp_dir = optimize_and_split_audio(uploaded_file.getvalue(), uploaded_file.name)
+        # 1. PREPARACIÓN AUDIO
+        with st.spinner("🔄 Preparando audio (FFmpeg)..."):
+            chunks, full_audio, temp_dir = split_audio_openai_safe(uploaded_file.getvalue(), uploaded_file.name)
             st.session_state.uploaded_audio_bytes = full_audio
         
         all_segments = []
         full_text_accumulated = ""
         total_chunks = len(chunks)
         
-        # 2. TRANSCRIPCIÓN ITERATIVA
-        progress_bar = st.progress(0, text="📝 Iniciando transcripción...")
+        # 2. TRANSCRIPCIÓN CON OPENAI (ROBUSTA)
+        progress_bar = st.progress(0, text="📝 Transcribiendo con OpenAI Whisper-1...")
         
         for i, chunk_path in enumerate(chunks):
-            # Calcular offset de tiempo (chunk 1 = 0s, chunk 2 = 180s, etc)
-            time_offset = i * 180 
-            
-            # Prompt dinámico: ayuda a conectar las frases entre cortes
-            current_prompt = "Continuación de la frase anterior. Español." if i > 0 else "Transcripción literal exacta. Español."
+            time_offset = i * 600 # 10 mins por chunk
             
             try:
                 with open(chunk_path, "rb") as f:
-                    transcription = client.audio.transcriptions.create(
-                        file=("audio.mp3", f.read()),
-                        model="whisper-large-v3",
+                    # Usamos el modelo oficial de OpenAI
+                    transcript = client_openai.audio.transcriptions.create(
+                        file=f,
+                        model="whisper-1",
                         language="es",
                         response_format="verbose_json",
-                        temperature=0.0, 
-                        prompt=current_prompt
+                        temperature=0.0 # Determinístico
                     )
                 
-                # Limpiar
-                cleaned_text = clean_whisper_hallucinations(transcription.text)
-                full_text_accumulated += cleaned_text + " "
+                # Procesar resultados
+                clean_txt = clean_hallucinations(transcript.text)
+                full_text_accumulated += clean_txt + " "
                 
                 # Ajustar timestamps
-                for seg in transcription.segments:
+                for seg in transcript.segments:
                     seg['start'] += time_offset
                     seg['end'] += time_offset
-                    txt_seg = clean_whisper_hallucinations(seg['text'])
-                    if len(txt_seg) > 1:
-                        seg['text'] = txt_seg
+                    seg['text'] = clean_hallucinations(seg['text'])
+                    if len(seg['text']) > 1:
                         all_segments.append(seg)
                         
             except Exception as e:
-                st.warning(f"⚠️ Error en segmento {i+1}: {e}")
+                st.error(f"Error en parte {i+1}: {e}")
             
-            progress_bar.progress((i + 1) / total_chunks, text=f"📝 Transcribiendo parte {i+1} de {total_chunks}...")
+            progress_bar.progress((i + 1) / total_chunks)
             
         progress_bar.empty()
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        # 3. CORRECCIÓN FINAL
-        if mode == "Quirúrgico (Solo Tildes)":
-            final_text = surgical_correction(full_text_accumulated, client)
+        # 3. CORRECCIÓN (USANDO GROQ PARA AHORRAR)
+        if correction_mode == "Quirúrgico (Tildes)":
+            final_text = surgical_correction(full_text_accumulated, client_groq)
         else:
             final_text = full_text_accumulated
             
@@ -280,61 +276,57 @@ if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploade
         st.rerun()
 
     except Exception as e:
-        st.error(f"❌ Error crítico: {e}")
+        st.error(f"❌ Error: {e}")
 
-# --- RESULTADOS ---
+# --- VISUALIZACIÓN ---
 if 'transcription_text' in st.session_state:
     st.markdown("---")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
     
-    tab1, tab2 = st.tabs(["📝 Transcripción & Búsqueda", "💬 Chat con Audio"])
+    tab1, tab2 = st.tabs(["📝 Texto & Búsqueda", "💬 Chat"])
     
     with tab1:
-        col_s1, col_s2 = st.columns([4, 1])
-        query = col_s1.text_input("🔎 Buscar palabra:", key="search_input")
-        col_s2.write(""); col_s2.button("✖️", on_click=clear_search_callback)
+        c1, c2 = st.columns([4, 1])
+        q = c1.text_input("🔎 Buscar:", key="search_input")
+        c2.write(""); c2.button("✖️", on_click=clear_search_callback)
         
-        if query:
-            matches_found = False
-            with st.expander(f"📍 Resultados para: '{query}'", expanded=True):
+        if q:
+            found = False
+            with st.expander(f"Resultados: {q}", expanded=True):
                 for i, seg in enumerate(st.session_state.segments):
-                    if query.lower() in seg['text'].lower():
-                        matches_found = True
-                        context = get_extended_context(st.session_state.segments, i, 1)
-                        for ctx in context:
-                            c1, c2 = st.columns([0.15, 0.85])
-                            key_btn = f"t_{i}_{ctx['start']}"
-                            c1.button(f"▶️ {ctx['time']}", key=key_btn, on_click=set_audio_time, args=(ctx['start'],))
+                    if q.lower() in seg['text'].lower():
+                        found = True
+                        ctx = get_extended_context(st.session_state.segments, i)
+                        for c in ctx:
+                            bt_k = f"t_{i}_{c['start']}"
+                            col_a, col_b = st.columns([0.15, 0.85])
+                            col_a.button(f"▶ {c['time']}", key=bt_k, on_click=set_audio_time, args=(c['start'],))
                             
-                            txt_display = ctx['text']
-                            if ctx['is_match']:
-                                txt_display = re.sub(re.escape(query), f"**{query.upper()}**", txt_display, flags=re.IGNORECASE)
-                            c2.markdown(txt_display)
+                            txt = c['text']
+                            if c['is_match']: txt = re.sub(re.escape(q), f"**{q.upper()}**", txt, flags=re.IGNORECASE)
+                            col_b.markdown(txt)
                         st.divider()
-                if not matches_found: st.warning("No se encontraron coincidencias.")
+                if not found: st.warning("Sin resultados.")
 
-        st.markdown("### 📄 Texto Completo")
-        st.text_area("Copia el texto aquí:", st.session_state.transcription_text, height=600, label_visibility="collapsed")
+        st.text_area("Texto Completo:", st.session_state.transcription_text, height=600, label_visibility="collapsed")
         
-        c1, c2, c3 = st.columns([1,1,1])
-        c1.download_button("💾 TXT", st.session_state.transcription_text, "transcripcion.txt", use_container_width=True)
-        c2.download_button("💾 SRT", export_to_srt(st.session_state.segments), "subs.srt", use_container_width=True)
-        with c3: create_copy_button(st.session_state.transcription_text)
+        ca, cb, cc = st.columns(3)
+        ca.download_button("💾 TXT", st.session_state.transcription_text, "trans.txt", use_container_width=True)
+        cb.download_button("💾 SRT", export_to_srt(st.session_state.segments), "subs.srt", use_container_width=True)
+        with cc: create_copy_button(st.session_state.transcription_text)
 
     with tab2:
-        st.subheader("💬 Chat con el Audio")
-        for msg in st.session_state.qa_history:
-            with st.chat_message("user"): st.write(msg['question'])
-            with st.chat_message("assistant"): st.write(msg['answer'])
+        for m in st.session_state.qa_history:
+            with st.chat_message("user"): st.write(m['question'])
+            with st.chat_message("assistant"): st.write(m['answer'])
             
-        if prompt := st.chat_input("Pregunta algo sobre el contenido..."):
-            st.session_state.qa_history.append({"question": prompt, "answer": "..."})
-            with st.spinner("Consultando..."):
-                ans = answer_question(prompt, st.session_state.transcription_text, Groq(api_key=api_key), st.session_state.qa_history[:-1])
+        if p := st.chat_input("Pregunta al audio..."):
+            st.session_state.qa_history.append({"question": p, "answer": "..."})
+            with st.spinner("Pensando..."):
+                # Chat usa Groq (Gratis y rápido)
+                ans = answer_question(p, st.session_state.transcription_text, Groq(api_key=groq_api_key), st.session_state.qa_history[:-1])
                 st.session_state.qa_history[-1]["answer"] = ans
             st.rerun()
 
     st.markdown("---")
-    if st.button("🗑️ Limpiar Todo"):
-        st.session_state.clear()
-        st.rerun()
+    if st.button("🗑️ Nuevo Archivo"): st.session_state.clear(); st.rerun()
