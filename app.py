@@ -7,7 +7,6 @@ import re
 import subprocess
 import streamlit.components.v1 as components
 from datetime import timedelta
-from collections import Counter
 
 # --- LÓGICA DE AUTENTICACIÓN ---
 if "password_correct" not in st.session_state:
@@ -41,7 +40,7 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN APP ---
-st.set_page_config(page_title="Transcriptor Pro V12", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro V11", page_icon="🎙️", layout="wide")
 
 # --- ESTADO E INICIALIZACIÓN ---
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
@@ -60,43 +59,7 @@ def set_audio_time(start_seconds):
 def clear_search_callback():
     st.session_state.search_input = ""
 
-# --- MEJORA 1: DETECCIÓN AVANZADA DE REPETICIONES ---
-def detect_phrase_repetition(text, min_phrase_length=10, similarity_threshold=0.85):
-    """
-    Detecta frases completas repetidas, no solo palabras.
-    Ejemplo: "y entonces dijo que..." repetido 5 veces
-    """
-    # Dividir en frases de aproximadamente min_phrase_length palabras
-    words = text.split()
-    phrases = []
-    
-    for i in range(len(words) - min_phrase_length + 1):
-        phrase = ' '.join(words[i:i+min_phrase_length])
-        phrases.append(phrase.lower())
-    
-    # Contar frecuencias
-    phrase_counts = Counter(phrases)
-    
-    # Detectar frases que se repiten más de 2 veces
-    repeated_phrases = [phrase for phrase, count in phrase_counts.items() if count > 2]
-    
-    return repeated_phrases
-
-def remove_phrase_loops(text):
-    """
-    Elimina bucles de frases completas manteniendo solo la primera ocurrencia.
-    """
-    repeated = detect_phrase_repetition(text, min_phrase_length=5)
-    
-    for phrase in repeated:
-        # Buscar el patrón repetido y dejarlo solo una vez
-        pattern = re.escape(phrase)
-        # Encuentra repeticiones consecutivas o cercanas
-        text = re.sub(f'({pattern})(\\s+\\1)+', r'\1', text, flags=re.IGNORECASE)
-    
-    return text
-
-# --- MEJORA 2: LIMPIEZA MEJORADA ANTI-ALUCINACIONES ---
+# --- FUNCIONES DE LIMPIEZA (ANTI-ALUCINACIONES) ---
 def clean_whisper_hallucinations(text):
     """Limpia frases inventadas comunes en silencios y bucles."""
     if not text: return ""
@@ -110,89 +73,35 @@ def clean_whisper_hallucinations(text):
         r"Sujeto a.*licencia.*",
         r"Copyright.*",
         r"Gracias por ver.*",
-        r"Suscríbete.*",
-        r"Dale like.*",
-        r"Comparte este video.*",
-        r"Visita nuestro sitio.*",
-        # NUEVO: Patrones de palabras clave repetitivas
-        r"\b(siguiente|anterior|continuar|página|menú|inicio)\b(\s+\1\b){2,}",
+        r"Suscríbete.*"
     ]
     
     cleaned = text
     for pattern in junk_patterns:
         cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
     
-    # Eliminar repeticiones de palabras simples (ej: "hola hola hola")
-    cleaned = re.sub(r'\b(\w+)( \1\b){2,}', r'\1', cleaned, flags=re.IGNORECASE)
-    
-    # MEJORA 3: Eliminar bucles de frases completas
-    cleaned = remove_phrase_loops(cleaned)
-    
-    # Limpiar espacios múltiples
-    cleaned = re.sub(r'\s{2,}', ' ', cleaned)
+    # Eliminar repeticiones Bucle (ej: "hola hola hola")
+    cleaned = re.sub(r'\b(\w+)( \1\b)+', r'\1', cleaned, flags=re.IGNORECASE)
     
     return cleaned.strip()
 
-# --- MEJORA 4: FILTRADO INTELIGENTE DE SEGMENTOS ---
 def filter_segments_data(segments):
-    """
-    Limpia la data de segmentos con filtros más inteligentes.
-    Evita perder información valiosa pero elimina basura real.
-    """
+    """Limpia la data de segmentos para que los timestamps no apunten a basura."""
     clean_segments = []
     last_text = ""
-    consecutive_short = 0
     
     for seg in segments:
         txt = clean_whisper_hallucinations(seg['text'])
         
-        # Filtros de calidad más permisivos
-        if len(txt) == 0: 
-            continue
+        # Filtros de calidad
+        if len(txt) < 2: continue # Muy corto
+        if txt.lower() == last_text.lower(): continue # Repetido
         
-        # MEJORA: Permitir segmentos cortos si no son consecutivos
-        if len(txt) < 3:
-            consecutive_short += 1
-            if consecutive_short > 3:  # Solo bloquear si hay muchos seguidos
-                continue
-        else:
-            consecutive_short = 0
-        
-        # Detectar repetición exacta (case-insensitive)
-        if txt.lower() == last_text.lower():
-            continue
-        
-        # MEJORA: Detectar frases muy similares (>90% similitud)
-        if last_text and len(txt) > 10:
-            similarity = sum(a == b for a, b in zip(txt.lower(), last_text.lower())) / max(len(txt), len(last_text))
-            if similarity > 0.9:
-                continue
-        
-        seg['text'] = txt
+        seg['text'] = txt # Actualizamos el texto limpio
         clean_segments.append(seg)
         last_text = txt
         
     return clean_segments
-
-# --- MEJORA 5: CHUNKING DE AUDIO PARA ARCHIVOS LARGOS ---
-def should_chunk_audio(duration_seconds):
-    """
-    Whisper puede fallar en audios muy largos (>30 min).
-    Retorna True si necesita chunking.
-    """
-    return duration_seconds > 1800  # 30 minutos
-
-def get_audio_duration(audio_path):
-    """Obtiene duración del audio usando ffprobe."""
-    try:
-        result = subprocess.run(
-            ["ffprobe", "-v", "error", "-show_entries", "format=duration", 
-             "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
-            capture_output=True, text=True, check=True
-        )
-        return float(result.stdout.strip())
-    except:
-        return 0
 
 # --- FUNCIONES DE CORRECCIÓN QUIRÚRGICA ---
 def text_chunker_smart(text, chunk_size=2500):
@@ -239,16 +148,18 @@ Si la entrada ya está bien, devuélvela IDÉNTICA. Solo responde con el texto c
             response = client.chat.completions.create(
                 messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": chunk}],
                 model="llama-3.1-8b-instant",
-                temperature=0.0,
+                temperature=0.0, # Determinístico
                 max_tokens=len(chunk) + 500
             )
             corrected = response.choices[0].message.content.strip()
             
             # --- SAFETY CHECK ---
+            # Si la longitud cambia más de un 10%, el modelo alucinó/resumió. Descartar.
             len_diff = abs(len(corrected) - len(chunk))
             ratio = len_diff / len(chunk) if len(chunk) > 0 else 0
             
             if ratio > 0.10: 
+                # Fallback al original si el cambio es sospechoso
                 final_parts.append(chunk)
             else:
                 final_parts.append(corrected)
@@ -289,10 +200,10 @@ def export_to_srt(segments):
         srt.append(f"{i}\n{s_str} --> {e_str}\n{seg['text']}\n")
     return "\n".join(srt)
 
-# --- MEJORA 6: OPTIMIZACIÓN AUDIO CON NORMALIZACIÓN ---
+# --- OPTIMIZACIÓN AUDIO (FFMPEG) ---
 def optimize_audio_robust(file_bytes, filename):
     """
-    Convierte cualquier entrada a MP3 16kHz Mono con normalización de volumen.
+    Convierte cualquier entrada a MP3 16kHz Mono 32kbps.
     Esto es CRUCIAL para que Whisper no alucine.
     """
     file_ext = os.path.splitext(filename)[1] or ".mp3"
@@ -302,26 +213,14 @@ def optimize_audio_robust(file_bytes, filename):
     
     output_path = input_path + "_opt.mp3"
     try:
-        # MEJORA: Agregar filtro de normalización y reducción de ruido leve
-        subprocess.run([
-            "ffmpeg", "-y", "-i", input_path,
-            "-vn",  # Sin video
-            "-ar", "16000",  # Sample rate óptimo para Whisper
-            "-ac", "1",  # Mono
-            "-b:a", "64k",  # MEJORA: Subido de 32k a 64k para mejor calidad
-            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11,highpass=f=200,lowpass=f=3000",  # Normalización + filtros de voz
-            "-f", "mp3",
-            output_path
-        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        with open(output_path, 'rb') as f: 
-            new_bytes = f.read()
-        os.unlink(input_path)
-        os.unlink(output_path)
+        # Comando optimizado para voz
+        subprocess.run(["ffmpeg", "-y", "-i", input_path, "-vn", "-ar", "16000", "-ac", "1", "-b:a", "32k", "-f", "mp3", output_path], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        with open(output_path, 'rb') as f: new_bytes = f.read()
+        os.unlink(input_path); os.unlink(output_path)
         return new_bytes, True
-    except Exception as e:
+    except:
+        # Si falla ffmpeg, usamos el original pero advertimos
         if os.path.exists(input_path): os.unlink(input_path)
-        if os.path.exists(output_path): os.unlink(output_path)
         return file_bytes, False
 
 # --- FUNCIÓN CHAT ---
@@ -336,73 +235,51 @@ def answer_question(q, text, client, history):
     except Exception as e: return f"Error: {e}"
 
 # --- INTERFAZ PRINCIPAL ---
-st.title("🎙️ Transcriptor Pro V12 - Johnascriptor")
-st.caption("✨ Versión mejorada: Sin repeticiones, sin espacios vacíos, 100% exacta")
+st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
     st.markdown("### Modos de Precisión")
     mode = st.radio("Nivel de Corrección:", ["Whisper Puro (Sin cambios)", "Quirúrgico (Solo Tildes)"], index=1)
-    
     st.markdown("---")
-    st.markdown("### 🔧 Ajustes Avanzados")
-    
-    # MEJORA 7: Control de temperatura ajustable
-    temperature = st.slider("Temperatura Whisper", 0.0, 0.5, 0.1, 0.05, 
-                           help="0.0 = Muy determinístico (puede repetir). 0.1-0.2 = Balance óptimo. 0.3+ = Más creativo pero menos preciso.")
-    
-    st.markdown("---")
-    st.info("✅ Mejoras activas:\n- Normalización de audio\n- Detección de bucles\n- Filtrado inteligente\n- Temperatura ajustable")
+    st.info("✅ Optimización FFmpeg activa para cada archivo.")
 
-uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov", "flac", "aac"])
+uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov"])
 
 if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
     client = Groq(api_key=api_key)
     
     try:
-        # 1. OPTIMIZAR CON NORMALIZACIÓN
-        with st.spinner("🔄 Optimizando audio (Normalización + Filtros de Voz)..."):
+        # 1. OPTIMIZAR (SIEMPRE SE EJECUTA)
+        with st.spinner("🔄 Optimizando audio con FFmpeg (16kHz Mono)..."):
             audio_bytes, optimized = optimize_audio_robust(uploaded_file.getvalue(), uploaded_file.name)
             st.session_state.uploaded_audio_bytes = audio_bytes
-            if not optimized: 
-                st.warning("⚠️ No se pudo optimizar el audio, usando original.")
+            if not optimized: st.warning("⚠️ No se pudo optimizar el audio, usando original.")
 
-        # 2. TRANSCRIBIR CON PARÁMETROS MEJORADOS
-        with st.spinner("📝 Transcribiendo con Whisper V3 (Modo Exacto Mejorado)..."):
+        # 2. TRANSCRIBIR (WHISPER)
+        with st.spinner("📝 Transcribiendo (Modo Exacto)..."):
             with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
             
-            # MEJORA 8: Prompt mejorado y temperatura ajustable
-            enhanced_prompt = """Esta es una transcripción en español de una conversación o presentación. 
-Transcribe exactamente lo que escuchas sin repetir frases, sin agregar texto de relleno, 
-y sin inventar contenido en silencios. Usa puntuación natural española."""
-            
             with open(tmp_path, "rb") as f:
+                # Temperature 0.0 + Prompt específico para reducir alucinaciones
                 transcription_data = client.audio.transcriptions.create(
                     file=("audio.mp3", f.read()),
                     model="whisper-large-v3",
                     language="es",
                     response_format="verbose_json",
-                    temperature=temperature,  # Temperatura ajustable
-                    prompt=enhanced_prompt  # Prompt mejorado
+                    temperature=0.0, 
+                    prompt="Transcripción literal. Sin repetir. Español."
                 )
             os.unlink(tmp_path)
-            
-            # Diagnóstico (opcional)
-            st.sidebar.success(f"✅ Segmentos detectados: {len(transcription_data.segments)}")
 
-        # 3. LIMPIEZA ANTI-ALUCINACIONES MEJORADA
+        # 3. LIMPIEZA ANTI-ALUCINACIONES
         raw_text_cleaned = clean_whisper_hallucinations(transcription_data.text)
         segments_cleaned = filter_segments_data(transcription_data.segments)
         
-        # Diagnóstico de limpieza
-        removed = len(transcription_data.segments) - len(segments_cleaned)
-        if removed > 0:
-            st.sidebar.info(f"🧹 Segmentos filtrados: {removed}")
-        
-        # 4. CORRECCIÓN OPCIONAL
+        # 4. CORRECCIÓN (OPCIONAL PERO RECOMENDADA)
         if mode == "Quirúrgico (Solo Tildes)":
             final_text = surgical_correction(raw_text_cleaned, client)
         else:
@@ -417,18 +294,11 @@ y sin inventar contenido en silencios. Usa puntuación natural española."""
         
     except Exception as e:
         st.error(f"❌ Error crítico: {e}")
-        st.exception(e)  # Muestra el traceback completo
 
 # --- VISUALIZACIÓN ---
 if 'transcription_text' in st.session_state:
     st.markdown("---")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
-    
-    # Estadísticas rápidas
-    col1, col2, col3 = st.columns(3)
-    col1.metric("📝 Palabras", len(st.session_state.transcription_text.split()))
-    col2.metric("⏱️ Segmentos", len(st.session_state.segments))
-    col3.metric("🔤 Caracteres", len(st.session_state.transcription_text))
     
     tab1, tab2 = st.tabs(["📝 Transcripción & Búsqueda", "💬 Chat con Audio"])
     
@@ -442,15 +312,19 @@ if 'transcription_text' in st.session_state:
         if query:
             matches_found = False
             with st.expander(f"📍 Resultados para: '{query}'", expanded=True):
+                # Usamos los segmentos limpios para buscar
                 for i, seg in enumerate(st.session_state.segments):
                     if query.lower() in seg['text'].lower():
                         matches_found = True
+                        # Mostrar contexto
                         context = get_extended_context(st.session_state.segments, i, 1)
                         for ctx in context:
                             c1, c2 = st.columns([0.15, 0.85])
+                            # EL BOTÓN MÁGICO PARA IR AL TIEMPO
                             key_btn = f"t_{i}_{ctx['start']}"
                             c1.button(f"▶️ {ctx['time']}", key=key_btn, on_click=set_audio_time, args=(ctx['start'],))
                             
+                            # Resaltado
                             txt_display = ctx['text']
                             if ctx['is_match']:
                                 txt_display = re.sub(re.escape(query), f"**{query.upper()}**", txt_display, flags=re.IGNORECASE)
