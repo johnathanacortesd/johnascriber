@@ -8,6 +8,7 @@ import subprocess
 import streamlit.components.v1 as components
 from datetime import timedelta
 import glob
+import shutil
 
 # --- LÓGICA DE AUTENTICACIÓN ---
 if "password_correct" not in st.session_state:
@@ -27,8 +28,8 @@ if not st.session_state.password_correct:
     st.markdown("""
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
-        <h2>Transcriptor Pro - Ultimate V12</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>Segmentación Inteligente: No se pierde ni un segundo.</p>
+        <h2>Transcriptor Pro - Cobertura Total</h2>
+        <p style='color: #666; margin-bottom: 2rem;'>V13: Segmentación de alta frecuencia (3 min) para audio denso.</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -41,9 +42,9 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN APP ---
-st.set_page_config(page_title="Transcriptor Pro V12", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro V13", page_icon="🎙️", layout="wide")
 
-# --- ESTADO E INICIALIZACIÓN ---
+# --- ESTADO ---
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
 if 'qa_history' not in st.session_state: st.session_state.qa_history = []
 
@@ -53,7 +54,7 @@ except KeyError:
     st.error("❌ Error: No se encontró GROQ_API_KEY en secrets")
     st.stop()
 
-# --- CALLBACKS UI ---
+# --- CALLBACKS ---
 def set_audio_time(start_seconds):
     st.session_state.audio_start_time = int(start_seconds)
 
@@ -71,20 +72,9 @@ def clean_whisper_hallucinations(text):
     cleaned = text
     for pattern in junk_patterns:
         cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
+    # Eliminar repeticiones (bucle)
     cleaned = re.sub(r'\b(\w+)( \1\b)+', r'\1', cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
-
-def filter_segments_data(segments):
-    clean_segments = []
-    last_text = ""
-    for seg in segments:
-        txt = clean_whisper_hallucinations(seg['text'])
-        if len(txt) < 2: continue 
-        if txt.lower() == last_text.lower(): continue 
-        seg['text'] = txt 
-        clean_segments.append(seg)
-        last_text = txt
-    return clean_segments
 
 # --- CORRECCIÓN QUIRÚRGICA ---
 def text_chunker_smart(text, chunk_size=2500):
@@ -126,16 +116,13 @@ def surgical_correction(text, client):
     my_bar.empty()
     return " ".join(final_parts)
 
-# --- UTILIDADES DE ARCHIVO Y FFMPEG ---
-def optimize_and_split_audio(file_bytes, filename, segment_time=600):
+# --- PROCESAMIENTO DE AUDIO (SEGMENTACIÓN AGRESIVA) ---
+def optimize_and_split_audio(file_bytes, filename):
     """
-    1. Optimiza a 16kHz Mono (Whisper friendly).
-    2. Si es largo, lo corta en pedazos de 10 mins (600s) para evitar límites de API.
-    Retorna: lista de rutas de archivos chunks, y el path del archivo completo optimizado.
+    Optimiza a 16kHz Mono y divide en segmentos de 180s (3 min).
+    Segmentos cortos = Menor probabilidad de que Whisper se 'pierda' en audios densos.
     """
     file_ext = os.path.splitext(filename)[1] or ".mp3"
-    
-    # Directorio temporal único
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, f"original{file_ext}")
     
@@ -144,37 +131,39 @@ def optimize_and_split_audio(file_bytes, filename, segment_time=600):
 
     optimized_path = os.path.join(temp_dir, "full_optimized.mp3")
     
+    # 1. Convertir a formato estándar robusto (64k mono)
     try:
-        # Paso 1: Optimización General (Aumenté bitrate a 64k para mayor claridad)
         subprocess.run([
             "ffmpeg", "-y", "-i", input_path, 
             "-vn", "-ar", "16000", "-ac", "1", "-b:a", "64k", 
             "-f", "mp3", optimized_path
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Paso 2: Segmentación (Chunking)
-        # Corta en archivos part000.mp3, part001.mp3, etc.
-        chunk_pattern = os.path.join(temp_dir, "part%03d.mp3")
+    except:
+        # Fallback si falla la conversión (raro)
+        shutil.copy(input_path, optimized_path)
+
+    # 2. Segmentar en trozos de 180 segundos (3 minutos)
+    # Esto es la clave para que no falten pedazos largos
+    chunk_pattern = os.path.join(temp_dir, "part%03d.mp3")
+    try:
         subprocess.run([
             "ffmpeg", "-y", "-i", optimized_path,
-            "-f", "segment", "-segment_time", str(segment_time),
+            "-f", "segment", "-segment_time", "180", 
             "-c", "copy", "-reset_timestamps", "1",
             chunk_pattern
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        chunks = sorted(glob.glob(os.path.join(temp_dir, "part*.mp3")))
-        
-        # Leemos el archivo completo optimizado para el reproductor
-        with open(optimized_path, 'rb') as f:
-            full_audio_bytes = f.read()
-            
-        return chunks, full_audio_bytes, temp_dir
-        
     except Exception as e:
-        # Fallback: devolver solo el original si falla ffmpeg
-        return [input_path], file_bytes, temp_dir
+        return [optimized_path], None, temp_dir # Fallback a archivo único si falla split
 
-# --- INTERFAZ UTILIDADES ---
+    chunks = sorted(glob.glob(os.path.join(temp_dir, "part*.mp3")))
+    
+    # Leer el archivo completo para el reproductor
+    with open(optimized_path, 'rb') as f:
+        full_audio_bytes = f.read()
+            
+    return chunks, full_audio_bytes, temp_dir
+
+# --- UTILIDADES ---
 def create_copy_button(text_to_copy):
     text_json = json.dumps(text_to_copy)
     button_id = f"copy-button-{hash(text_to_copy)}"
@@ -203,7 +192,7 @@ def export_to_srt(segments):
     return "\n".join(srt)
 
 def answer_question(q, text, client, history):
-    msgs = [{"role": "system", "content": "Eres un asistente útil. Responde preguntas basándote ÚNICAMENTE en la transcripción proporcionada."}]
+    msgs = [{"role": "system", "content": "Eres un asistente útil. Responde basándote ÚNICAMENTE en la transcripción."}]
     for item in history:
         msgs.append({"role": "user", "content": item['question']})
         msgs.append({"role": "assistant", "content": item['answer']})
@@ -212,70 +201,73 @@ def answer_question(q, text, client, history):
         return client.chat.completions.create(messages=msgs, model="llama-3.1-8b-instant").choices[0].message.content
     except Exception as e: return f"Error: {e}"
 
-# --- MAIN ---
+# --- MAIN UI ---
 st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
     mode = st.radio("Nivel de Corrección:", ["Whisper Puro (Sin cambios)", "Quirúrgico (Solo Tildes)"], index=1)
-    st.info("✅ Sistema Splitter activo: Procesa archivos de cualquier duración sin cortes.")
+    st.info("✅ Sistema V13: Cortes de 3 minutos activados para evitar pérdida de datos.")
 
 uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov"])
 
-if st.button("🚀 Iniciar Transcripción Segura", type="primary", disabled=not uploaded_file):
+if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
     client = Groq(api_key=api_key)
     
     try:
-        # 1. OPTIMIZACIÓN Y SPLIT
-        with st.spinner("🔄 Procesando: Optimizando y dividiendo audio en segmentos seguros..."):
-            # Dividimos en chunks de 10 min (600s) para garantizar que Groq no corte el audio
-            chunks, full_audio, temp_dir = optimize_and_split_audio(uploaded_file.getvalue(), uploaded_file.name, segment_time=600)
+        # 1. SPLIT (3 MINUTOS)
+        with st.spinner("🔄 Optimizando y segmentando (esto evita que se pierdan frases)..."):
+            chunks, full_audio, temp_dir = optimize_and_split_audio(uploaded_file.getvalue(), uploaded_file.name)
             st.session_state.uploaded_audio_bytes = full_audio
         
         all_segments = []
         full_text_accumulated = ""
+        total_chunks = len(chunks)
         
         # 2. TRANSCRIPCIÓN ITERATIVA
-        progress_bar = st.progress(0, text="📝 Transcribiendo segmentos...")
+        progress_bar = st.progress(0, text="📝 Iniciando transcripción...")
         
         for i, chunk_path in enumerate(chunks):
-            # Calcular offset de tiempo (ej: chunk 2 empieza en 600s)
-            time_offset = i * 600 
+            # Calcular offset de tiempo (chunk 1 = 0s, chunk 2 = 180s, etc)
+            time_offset = i * 180 
             
-            with open(chunk_path, "rb") as f:
-                transcription = client.audio.transcriptions.create(
-                    file=("audio.mp3", f.read()),
-                    model="whisper-large-v3",
-                    language="es",
-                    response_format="verbose_json",
-                    temperature=0.0, # Máxima fidelidad
-                    prompt="Transcripción literal exacta. Español."
-                )
+            # Prompt dinámico: ayuda a conectar las frases entre cortes
+            current_prompt = "Continuación de la frase anterior. Español." if i > 0 else "Transcripción literal exacta. Español."
             
-            # Limpiar alucinaciones del chunk
-            cleaned_text = clean_whisper_hallucinations(transcription.text)
-            full_text_accumulated += cleaned_text + " "
+            try:
+                with open(chunk_path, "rb") as f:
+                    transcription = client.audio.transcriptions.create(
+                        file=("audio.mp3", f.read()),
+                        model="whisper-large-v3",
+                        language="es",
+                        response_format="verbose_json",
+                        temperature=0.0, 
+                        prompt=current_prompt
+                    )
+                
+                # Limpiar
+                cleaned_text = clean_whisper_hallucinations(transcription.text)
+                full_text_accumulated += cleaned_text + " "
+                
+                # Ajustar timestamps
+                for seg in transcription.segments:
+                    seg['start'] += time_offset
+                    seg['end'] += time_offset
+                    txt_seg = clean_whisper_hallucinations(seg['text'])
+                    if len(txt_seg) > 1:
+                        seg['text'] = txt_seg
+                        all_segments.append(seg)
+                        
+            except Exception as e:
+                st.warning(f"⚠️ Error en segmento {i+1}: {e}")
             
-            # Ajustar timestamps y agregar segmentos
-            for seg in transcription.segments:
-                seg['start'] += time_offset
-                seg['end'] += time_offset
-                # Filtro de segmentos basura
-                txt_seg = clean_whisper_hallucinations(seg['text'])
-                if len(txt_seg) > 1:
-                    seg['text'] = txt_seg
-                    all_segments.append(seg)
-            
-            progress_bar.progress((i + 1) / len(chunks))
+            progress_bar.progress((i + 1) / total_chunks, text=f"📝 Transcribiendo parte {i+1} de {total_chunks}...")
             
         progress_bar.empty()
-        
-        # Limpieza de temporales
-        import shutil
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        # 3. CORRECCIÓN
+        # 3. CORRECCIÓN FINAL
         if mode == "Quirúrgico (Solo Tildes)":
             final_text = surgical_correction(full_text_accumulated, client)
         else:
@@ -288,9 +280,9 @@ if st.button("🚀 Iniciar Transcripción Segura", type="primary", disabled=not 
         st.rerun()
 
     except Exception as e:
-        st.error(f"❌ Error durante el proceso: {e}")
+        st.error(f"❌ Error crítico: {e}")
 
-# --- VISUALIZACIÓN ---
+# --- RESULTADOS ---
 if 'transcription_text' in st.session_state:
     st.markdown("---")
     st.audio(st.session_state.uploaded_audio_bytes, start_time=st.session_state.audio_start_time)
