@@ -30,7 +30,7 @@ if not st.session_state.password_correct:
     <div style='text-align: center; padding: 2rem 0;'>
         <h1 style='color: #1f77b4; font-size: 3rem;'>🎙️</h1>
         <h2>Transcriptor Pro - Precisión Studio</h2>
-        <p style='color: #666; margin-bottom: 2rem;'>Motor OpenAI (No salta audio) + Corrección Groq</p>
+        <p style='color: #666; margin-bottom: 2rem;'>Motor OpenAI (No salta audio) + Búsqueda Exacta</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -43,7 +43,7 @@ if not st.session_state.password_correct:
     st.stop()
 
 # --- CONFIGURACIÓN APP ---
-st.set_page_config(page_title="Transcriptor Preciso V14", page_icon="🎙️", layout="wide")
+st.set_page_config(page_title="Transcriptor Pro V15", page_icon="🎙️", layout="wide")
 
 # --- ESTADO ---
 if 'audio_start_time' not in st.session_state: st.session_state.audio_start_time = 0
@@ -52,10 +52,9 @@ if 'qa_history' not in st.session_state: st.session_state.qa_history = []
 # --- VERIFICACIÓN DE CLAVES ---
 try:
     groq_api_key = st.secrets["GROQ_API_KEY"]
-    openai_api_key = st.secrets["OPENAI_API_KEY"] # NUEVO REQUISITO
+    openai_api_key = st.secrets["OPENAI_API_KEY"]
 except KeyError:
     st.error("❌ Error: Faltan claves en secrets. Necesitas GROQ_API_KEY y OPENAI_API_KEY.")
-    st.info("💡 Usa OpenAI para transcribir (sin errores) y Groq para corregir/chat (gratis).")
     st.stop()
 
 # --- CALLBACKS ---
@@ -74,7 +73,7 @@ def clean_hallucinations(text):
         cleaned = re.sub(p, "", cleaned, flags=re.IGNORECASE)
     return cleaned.strip()
 
-# --- CORRECCIÓN QUIRÚRGICA (Con Groq para velocidad) ---
+# --- CORRECCIÓN QUIRÚRGICA ---
 def text_chunker_smart(text, chunk_size=2500):
     sentences = re.split(r'(?<=[.?!])\s+(?=[A-ZÁÉÍÓÚÑ])', text)
     chunks = []
@@ -89,7 +88,7 @@ def text_chunker_smart(text, chunk_size=2500):
     return chunks
 
 def surgical_correction(text, client_groq):
-    """Usa Groq (Llama3) solo para poner tildes. Es rápido y barato."""
+    """Usa Groq (Llama3) solo para poner tildes."""
     chunks = text_chunker_smart(text)
     final_parts = []
     my_bar = st.progress(0, text="🧠 Corrector Gramatical (Groq Llama 3)...")
@@ -116,11 +115,6 @@ def surgical_correction(text, client_groq):
 
 # --- SPLITTER PARA OPENAI ---
 def split_audio_openai_safe(file_bytes, filename):
-    """
-    OpenAI tiene un límite de 25MB por archivo.
-    Dividimos en trozos de 10 minutos (aprox 5-7MB en mp3) para estar seguros.
-    No necesitamos cortes de 3 min porque OpenAI NO pierde contexto como Groq.
-    """
     file_ext = os.path.splitext(filename)[1] or ".mp3"
     temp_dir = tempfile.mkdtemp()
     input_path = os.path.join(temp_dir, f"original{file_ext}")
@@ -128,7 +122,7 @@ def split_audio_openai_safe(file_bytes, filename):
     with open(input_path, "wb") as f:
         f.write(file_bytes)
 
-    # 1. Convertir a MP3 eficiente (64k es suficiente para voz perfecta)
+    # Convertir a MP3 64k mono
     optimized_path = os.path.join(temp_dir, "optimized.mp3")
     try:
         subprocess.run([
@@ -139,7 +133,7 @@ def split_audio_openai_safe(file_bytes, filename):
     except:
         shutil.copy(input_path, optimized_path)
 
-    # 2. Segmentar en 10 minutos (600s) - Seguro para API OpenAI
+    # Segmentar en 10 minutos (Seguro para OpenAI)
     chunk_pattern = os.path.join(temp_dir, "part%03d.mp3")
     try:
         subprocess.run([
@@ -201,15 +195,12 @@ st.title("🎙️ Transcriptor Pro - Johnascriptor")
 
 with st.sidebar:
     st.header("⚙️ Configuración")
-    st.markdown("**Motor Transcripción:** OpenAI (Whisper-1)")
-    st.markdown("**Motor Corrección/Chat:** Groq (Llama-3)")
-    st.info("✅ Esta combinación garantiza que NO falten pedazos de audio.")
-    
+    st.markdown("**Motor:** OpenAI Whisper (Precisión Total)")
     correction_mode = st.radio("Corrección:", ["Ninguna", "Quirúrgica (Tildes)"], index=1)
 
 uploaded_file = st.file_uploader("Sube audio/video", type=["mp3", "mp4", "wav", "m4a", "ogg", "mov"])
 
-if st.button("🚀 Iniciar Transcripción (Alta Precisión)", type="primary", disabled=not uploaded_file):
+if st.button("🚀 Iniciar Transcripción", type="primary", disabled=not uploaded_file):
     st.session_state.qa_history = []
     
     # Clientes
@@ -226,8 +217,8 @@ if st.button("🚀 Iniciar Transcripción (Alta Precisión)", type="primary", di
         full_text_accumulated = ""
         total_chunks = len(chunks)
         
-        # 2. TRANSCRIPCIÓN CON OPENAI (ROBUSTA)
-        progress_bar = st.progress(0, text="📝 Transcribiendo con OpenAI Whisper-1...")
+        # 2. TRANSCRIPCIÓN CON OPENAI
+        progress_bar = st.progress(0, text="📝 Transcribiendo con OpenAI...")
         
         for i, chunk_path in enumerate(chunks):
             time_offset = i * 600 # 10 mins por chunk
@@ -240,20 +231,26 @@ if st.button("🚀 Iniciar Transcripción (Alta Precisión)", type="primary", di
                         model="whisper-1",
                         language="es",
                         response_format="verbose_json",
-                        temperature=0.0 # Determinístico
+                        temperature=0.0
                     )
                 
-                # Procesar resultados
+                # Procesar texto completo
                 clean_txt = clean_hallucinations(transcript.text)
                 full_text_accumulated += clean_txt + " "
                 
-                # Ajustar timestamps
+                # --- CORRECCIÓN CRÍTICA DE FORMATO DE DATOS ---
+                # OpenAI devuelve objetos, no diccionarios. Convertimos manualmente:
                 for seg in transcript.segments:
-                    seg['start'] += time_offset
-                    seg['end'] += time_offset
-                    seg['text'] = clean_hallucinations(seg['text'])
-                    if len(seg['text']) > 1:
-                        all_segments.append(seg)
+                    # Usamos notación de punto (.start) no corchetes ['start']
+                    clean_seg_text = clean_hallucinations(seg.text)
+                    if len(clean_seg_text) > 1:
+                        # Creamos un diccionario estándar para que el buscador funcione
+                        seg_dict = {
+                            "start": seg.start + time_offset,
+                            "end": seg.end + time_offset,
+                            "text": clean_seg_text
+                        }
+                        all_segments.append(seg_dict)
                         
             except Exception as e:
                 st.error(f"Error en parte {i+1}: {e}")
@@ -263,14 +260,14 @@ if st.button("🚀 Iniciar Transcripción (Alta Precisión)", type="primary", di
         progress_bar.empty()
         shutil.rmtree(temp_dir, ignore_errors=True)
 
-        # 3. CORRECCIÓN (USANDO GROQ PARA AHORRAR)
+        # 3. CORRECCIÓN
         if correction_mode == "Quirúrgico (Tildes)":
             final_text = surgical_correction(full_text_accumulated, client_groq)
         else:
             final_text = full_text_accumulated
             
         st.session_state.transcription_text = final_text
-        st.session_state.segments = all_segments
+        st.session_state.segments = all_segments # Ahora es una lista de diccionarios válida
         
         st.balloons()
         st.rerun()
@@ -287,12 +284,14 @@ if 'transcription_text' in st.session_state:
     
     with tab1:
         c1, c2 = st.columns([4, 1])
-        q = c1.text_input("🔎 Buscar:", key="search_input")
+        # Buscador interactivo
+        q = c1.text_input("🔎 Buscar palabra (ej: Nissan):", key="search_input")
         c2.write(""); c2.button("✖️", on_click=clear_search_callback)
         
         if q:
             found = False
-            with st.expander(f"Resultados: {q}", expanded=True):
+            with st.expander(f"📍 Resultados para: '{q}'", expanded=True):
+                # Ahora st.session_state.segments tiene diccionarios válidos
                 for i, seg in enumerate(st.session_state.segments):
                     if q.lower() in seg['text'].lower():
                         found = True
@@ -300,10 +299,13 @@ if 'transcription_text' in st.session_state:
                         for c in ctx:
                             bt_k = f"t_{i}_{c['start']}"
                             col_a, col_b = st.columns([0.15, 0.85])
+                            # El botón de Timestamp funciona porque c['start'] existe
                             col_a.button(f"▶ {c['time']}", key=bt_k, on_click=set_audio_time, args=(c['start'],))
                             
                             txt = c['text']
-                            if c['is_match']: txt = re.sub(re.escape(q), f"**{q.upper()}**", txt, flags=re.IGNORECASE)
+                            # Resaltado
+                            if c['is_match']: 
+                                txt = re.sub(re.escape(q), f"**{q.upper()}**", txt, flags=re.IGNORECASE)
                             col_b.markdown(txt)
                         st.divider()
                 if not found: st.warning("Sin resultados.")
@@ -323,10 +325,9 @@ if 'transcription_text' in st.session_state:
         if p := st.chat_input("Pregunta al audio..."):
             st.session_state.qa_history.append({"question": p, "answer": "..."})
             with st.spinner("Pensando..."):
-                # Chat usa Groq (Gratis y rápido)
                 ans = answer_question(p, st.session_state.transcription_text, Groq(api_key=groq_api_key), st.session_state.qa_history[:-1])
                 st.session_state.qa_history[-1]["answer"] = ans
             st.rerun()
 
     st.markdown("---")
-    if st.button("🗑️ Nuevo Archivo"): st.session_state.clear(); st.rerun()
+    if st.button("🗑️ Limpiar Todo"): st.session_state.clear(); st.rerun()
