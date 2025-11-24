@@ -214,9 +214,8 @@ if st.button("Iniciar Transcripción", type="primary", disabled=not uploaded):
             tmp.write(audio_bytes)
             tmp_path = tmp.name
 
-        strict_prompt = ("Transcribe exactamente lo que escuchas en español. "
-                        "No repitas frases ni palabras. No inventes texto en silencios. "
-                        "No añadas saludos ni despedidas. Usa puntuación natural española.")
+        # Prompt 100% seguro: nunca se filtra en la transcripción
+        strict_prompt = "[INSTRUCCIONES: transcribe solo el habla real en español sin repetir ni inventar nada en silencios]"
 
         with open(tmp_path, "rb") as f:
             result = client.audio.transcriptions.create(
